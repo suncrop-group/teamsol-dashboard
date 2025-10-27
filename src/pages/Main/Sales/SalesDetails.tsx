@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -14,9 +14,74 @@ import {
 } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { callApi } from '@/api';
+import { callApi, callServerAPI } from '@/api';
+
+// TypeScript interfaces
+interface SalesOrderLine {
+  product_template_id: number;
+  policy_id: number;
+  ref_policy_id: number;
+  product_packaging_id: number;
+  product_packaging_qty: number;
+  qty: number;
+  price_unit: number;
+  discount: number;
+  product_template?: {
+    _id: string;
+    id: number;
+    name: string;
+  };
+  packaging?: {
+    _id: string;
+    id: number;
+    name: string;
+  };
+  policy?: {
+    _id: string;
+    id: number;
+    name: string;
+    code: string;
+  };
+}
+
+interface SalesOrderData {
+  partner_id: number;
+  territory_id: number;
+  policy_type: string;
+  employee_id: number;
+  company_id: number;
+  warehouse_id: number;
+  lines: SalesOrderLine[];
+  total: number;
+}
+
+interface SalesOrder {
+  lines: SalesOrderLine[];
+  order_id: number;
+  order_sequence: string;
+  createdAt: string;
+  status: string;
+  odooStatus: string;
+  partner: { name: string };
+  territory: { name: string };
+  policy_type: string;
+  createdByCustomer: boolean;
+  warehouse_id: number | null;
+  partner_id?: number;
+  territory_id?: number;
+  employee_id?: number;
+  company_id?: number;
+  total?: number;
+}
 
 const policyTypesName = {
   is_advance: 'Advance',
@@ -27,12 +92,18 @@ const policyTypesName = {
 
 const SalesDetails = () => {
   const { order } = useParams();
+  const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
   const [removeLoading, setRemoveLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
+  const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>(
+    []
+  );
+  const [selectedWarehouse, setSelectedWarehouse] = useState('');
 
-  const [salesOrder, setSalesOrder] = useState({
+  const [salesOrder, setSalesOrder] = useState<SalesOrder>({
     lines: [],
     order_id: 0,
     order_sequence: '',
@@ -42,29 +113,111 @@ const SalesDetails = () => {
     partner: { name: '' },
     territory: { name: '' },
     policy_type: 'is_advance',
+    createdByCustomer: false,
+    warehouse_id: null,
   });
+
+  const fetchWarehouses = async () => {
+    const onSuccessfulFetch = (data: { id: number; name: string }[]) => {
+      setWarehouses(data);
+    };
+
+    const onError = () => {
+      toast.error('Failed to fetch warehouses');
+    };
+
+    callApi('GET', '/warehouses/get', null, onSuccessfulFetch, onError);
+  };
+
+  const createSaleOrder = async () => {
+    setSaveLoading(true);
+
+    const onOrderOdooSuccess = (response: {
+      data: {
+        message: {
+          order_id: number;
+          order_sequence: string;
+        };
+      };
+    }) => {
+      const { order_id, order_sequence } = response.data.message;
+      if (!order_id || !order_sequence) {
+        toast.error('Error adding order');
+        setSaveLoading(false);
+        return;
+      }
+
+      const onSuccessDBOrder = () => {
+        toast.success('Warehouse Added Successfully');
+        setSaveLoading(false);
+        // Navigate back to the previous page
+        navigate(-1);
+      };
+
+      const onErrorOrder = () => {
+        setSaveLoading(false);
+        toast.error('Error adding order to the database');
+      };
+
+      callApi(
+        'PUT',
+        `/sales/warehouse/${salesOrder.order_id}`,
+        {
+          ...data,
+          order_id: order_id,
+          status: 'sent',
+          order_sequence: order_sequence,
+        },
+        onSuccessDBOrder,
+        onErrorOrder
+      );
+    };
+
+    const onError = () => {
+      setSaveLoading(false);
+      toast.error('Failed to create order');
+    };
+
+    const data: SalesOrderData = {
+      partner_id: Number(salesOrder.partner_id),
+      territory_id: Number(salesOrder.territory_id),
+      policy_type: salesOrder.policy_type,
+      employee_id: Number(salesOrder.employee_id),
+      company_id: Number(salesOrder.company_id),
+      warehouse_id: Number(selectedWarehouse),
+      lines: salesOrder.lines.map((line: SalesOrderLine) => ({
+        product_template_id: Number(line.product_template_id),
+        policy_id: Number(line.policy_id),
+        ref_policy_id: Number(line.ref_policy_id) || 0,
+        product_packaging_id: Number(line.product_packaging_id),
+        product_packaging_qty: Number(line.product_packaging_qty),
+        qty: Number(line.qty),
+        price_unit: Number(line.price_unit),
+        discount: Number(line.discount),
+      })),
+      total: Number(salesOrder.total),
+    };
+
+    console.log({ data });
+
+    callServerAPI(
+      'POST',
+      '/post/order',
+      {
+        data: {
+          ...data,
+          order_id: 0,
+        },
+      },
+      onOrderOdooSuccess,
+      onError
+    );
+  };
 
   const fetchSalesOrders = async () => {
     setLoading(true);
-    const onSuccessfulFetch = (data: {
-      data: {
-        lines: {
-          id: number;
-          name: string;
-          quantity: number;
-          price: number;
-        }[];
-        order_id: number;
-        order_sequence: string;
-        createdAt: string;
-        status: string;
-        odooStatus: string;
-        partner: { name: string };
-        territory: { name: string };
-        policy_type: string;
-      };
-    }) => {
-      setSalesOrder(data.data);
+    const onSuccessfulFetch = (data: { data: SalesOrder }) => {
+      setSalesOrder(data?.data);
       setLoading(false);
     };
 
@@ -87,6 +240,11 @@ const SalesDetails = () => {
   useEffect(() => {
     if (salesOrder?.order_id) {
       document.title = `#${salesOrder.order_id} - ${salesOrder.order_sequence}`;
+
+      // Fetch warehouses if createdByCustomer is true and no warehouse_id
+      if (salesOrder.createdByCustomer && !salesOrder.warehouse_id) {
+        fetchWarehouses();
+      }
     }
   }, [salesOrder]);
 
@@ -181,6 +339,55 @@ const SalesDetails = () => {
               </p>
             </div>
           </div>
+
+          {/* Warehouse Selection - Only show if createdByCustomer is true and no warehouse_id */}
+          {salesOrder.createdByCustomer && !salesOrder.warehouse_id && (
+            <div className="mb-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Select Warehouse</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Select
+                    value={selectedWarehouse}
+                    onValueChange={setSelectedWarehouse}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select a warehouse" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {warehouses?.map((warehouse) => (
+                        <SelectItem
+                          key={warehouse.id}
+                          value={warehouse.id.toString()}
+                        >
+                          {warehouse.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedWarehouse && (
+                    <div className="mt-4">
+                      <Button
+                        onClick={() => createSaleOrder()}
+                        className="w-full"
+                        disabled={saveLoading}
+                      >
+                        {saveLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Saving...
+                          </>
+                        ) : (
+                          'Save'
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           <Card className="mb-6">
             <CardHeader>

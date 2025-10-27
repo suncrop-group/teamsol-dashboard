@@ -36,9 +36,16 @@ const SalesCard = ({ item, onClick }) => (
     tabIndex={0}
   >
     <div className="flex justify-between items-center flex-wrap">
-      <span className="font-medium text-gray-900">
-        {item?.partner?.name} - {item?.territory?.name}
-      </span>
+      <div className="flex items-center gap-2">
+        <span className="font-medium text-gray-900">
+          {item?.partner?.name} - {item?.territory?.name}
+        </span>
+        {item?.createdByCustomer && (
+          <span className="bg-blue-100 text-blue-700 rounded px-2 py-1 text-[8px] font-semibold text-center">
+            Created by Customer
+          </span>
+        )}
+      </div>
       <span className="font-semibold">{priceFormatter(item?.total)} PKR</span>
     </div>
     <div className="flex justify-between items-center flex-wrap">
