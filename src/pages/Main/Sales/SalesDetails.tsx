@@ -29,7 +29,7 @@ import { callApi, callServerAPI } from '@/api';
 interface SalesOrderLine {
   product_template_id: number;
   policy_id: number;
-  ref_policy_id: number;
+  ref_policy_id: string | number;
   product_packaging_id: number;
   product_packaging_qty: number;
   qty: number;
@@ -62,6 +62,7 @@ interface SalesOrderData {
   warehouse_id: number;
   lines: SalesOrderLine[];
   total: number;
+  order_id: number;
 }
 
 interface SalesOrder {
@@ -185,10 +186,14 @@ const SalesDetails = () => {
       employee_id: Number(salesOrder.employee_id),
       company_id: Number(salesOrder.company_id),
       warehouse_id: Number(selectedWarehouse),
+      order_id: 0,
       lines: salesOrder.lines.map((line: SalesOrderLine) => ({
         product_template_id: Number(line.product_template_id),
         policy_id: Number(line.policy_id),
-        ref_policy_id: Number(line.ref_policy_id) || 0,
+        ref_policy_id:
+          Number(line.ref_policy_id) === -1
+            ? ''
+            : Number(line.ref_policy_id) || '',
         product_packaging_id: Number(line.product_packaging_id),
         product_packaging_qty: Number(line.product_packaging_qty),
         qty: Number(line.qty),
@@ -200,14 +205,13 @@ const SalesDetails = () => {
 
     console.log({ data });
 
+    console.log({ data: JSON.stringify(data) });
+
     callServerAPI(
       'POST',
       '/post/order',
       {
-        data: {
-          ...data,
-          order_id: 0,
-        },
+        data,
       },
       onOrderOdooSuccess,
       onError
