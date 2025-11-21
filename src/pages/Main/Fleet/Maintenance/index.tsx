@@ -73,6 +73,7 @@ const MaintenanceCard = ({
     odooStatus?: string;
     name?: string;
     url?: string;
+    date:string
   };
   onDeleteMaintenance: (id: number) => void;
   onViewImage: (url: string) => void;
@@ -125,7 +126,7 @@ const MaintenanceCard = ({
           </div>
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
-            <span>{dayjs(item.createdAt).format('DD/MM/YYYY HH:mm')}</span>
+            <span>{dayjs(item.date).format('DD/MM/YYYY')}</span>
           </div>
         </div>
 
@@ -184,6 +185,7 @@ const MaintenanceRow = ({
     odooStatus?: string;
     name?: string;
     url?: string;
+    date:string
   };
   onDeleteMaintenance: (id: number) => void;
   onViewImage: (url: string) => void;
@@ -227,10 +229,8 @@ const MaintenanceRow = ({
         <div className="flex items-center gap-2 text-sm text-gray-600">
           <Calendar className="h-4 w-4" />
           <div>
-            <div>{dayjs(item.createdAt).format('DD/MM/YYYY')}</div>
-            <div className="text-xs text-gray-400">
-              {dayjs(item.createdAt).format('HH:mm')}
-            </div>
+            <div>{dayjs(item.date).format('DD/MM/YYYY')}</div>
+           
           </div>
         </div>
       </TableCell>

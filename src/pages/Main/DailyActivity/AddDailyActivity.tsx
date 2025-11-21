@@ -241,9 +241,7 @@ const AddDailyActivity: React.FC = () => {
               user?.territories?.map((t: { id: string | number }) => t.id) ||
               [],
             id: response.data.id,
-            fuel_consumed: formData.fuel_consumed
-              ? parseFloat(formData.fuel_consumed)
-              : null,
+        
             remarks: formData.remarks,
           };
 
@@ -440,20 +438,7 @@ const AddDailyActivity: React.FC = () => {
               />
             </div>
 
-            {/* Fuel Consumed */}
-            <div className="space-y-2">
-              <Label htmlFor="fuel_consumed">Fuel Consumed (Liters)</Label>
-              <Input
-                id="fuel_consumed"
-                type="number"
-                step="0.1"
-                placeholder="Enter fuel consumed"
-                value={formData.fuel_consumed}
-                onChange={(e) =>
-                  handleInputChange('fuel_consumed', e.target.value)
-                }
-              />
-            </div>
+         
 
             {/* Remarks */}
             <div className="space-y-2">
@@ -467,13 +452,25 @@ const AddDailyActivity: React.FC = () => {
               />
             </div>
 
-            <Button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="w-full"
-            >
-              {loading ? 'Adding...' : 'Add Daily Activity'}
-            </Button>
+            {/* Check if activity already exists for selected date */}
+            {existingActivities.some(
+              (activity) =>
+                activity.date === dayjs(formData.date).format('YYYY-MM-DD')
+            ) ? (
+              <div className="w-full p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800 font-medium">
+                  Daily activity already exists for this date. Please select a different date.
+                </p>
+              </div>
+            ) : (
+              <Button
+                onClick={handleSubmit}
+                disabled={loading}
+                className="w-full"
+              >
+                {loading ? 'Adding...' : 'Add Daily Activity'}
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>
