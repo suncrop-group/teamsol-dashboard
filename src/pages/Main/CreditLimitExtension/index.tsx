@@ -21,7 +21,6 @@ import {
   Building2,
   User,
   CreditCard,
-  FileText,
   Clock,
 } from 'lucide-react';
 import { toast } from 'sonner';

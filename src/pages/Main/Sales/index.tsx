@@ -25,7 +25,6 @@ import {
   User,
   MapPin,
   ShoppingCart,
-  Tag,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';

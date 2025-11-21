@@ -448,84 +448,10 @@ const EventDetailsArea = () => {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex flex-col gap-6">
             <Card>
-              <CardHeader className="flex flex-row justify-between items-center">
-                <CardTitle>Event Detail #{event?.id}</CardTitle>
-
-                {/* <DialogTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-5 w-5" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Actions</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-2 flex flex-col gap-2">
-                      <Button
-                        disabled={
-                          event?.event_stage?.name
-                            ?.toLowerCase()
-                            ?.includes('cancel') || event?.verified
-                        }
-                        onClick={() => {
-                          setIsActionsDialogOpen(false);
-                          setIsVerifyDialogOpen(true);
-                        }}
-                      >
-                        {event?.event_stage?.name
-                          ?.toLowerCase()
-                          ?.includes('cancel')
-                          ? 'Cancelled'
-                          : event?.verified
-                          ? 'Verified'
-                          : 'Verify Event'}
-                      </Button>
-                      <Button
-                        disabled={
-                          event?.rsmAttended ||
-                          event?.event_stage?.name
-                            ?.toLowerCase()
-                            ?.includes('cancel')
-                        }
-                        onClick={() => {
-                          setIsActionsDialogOpen(false);
-                          if (event?.rsmAttended) {
-                            toast.error('Event is already marked as attended', {
-                              description: 'Error',
-                            });
-                            return;
-                          }
-                          if (
-                            event?.event_stage?.name
-                              ?.toLowerCase()
-                              ?.includes('cancel')
-                          ) {
-                            toast.error('Event is already cancelled', {
-                              description: 'Error',
-                            });
-                            return;
-                          }
-                          setIsAttendedDialogOpen(true);
-                        }}
-                      >
-                        {event?.rsmAttended ? 'Attended' : 'Mark as Attended'}
-                      </Button>
-                      {!event?.event_stage?.name
-                        ?.toLowerCase()
-                        ?.includes('cancel') && (
-                        <Button
-                          onClick={() => {
-                            setIsActionsDialogOpen(false);
-                            setIsChecklistDialogOpen(true);
-                          }}
-                        >
-                          Update Checklist
-                        </Button>
-                      )}
-                    </div>
-                  </DialogContent> */}
+              <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
+                <CardTitle className="text-xl">Event Detail #{event?.id}</CardTitle>
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -533,7 +459,7 @@ const EventDetailsArea = () => {
                       <MoreVertical className="h-5 w-5" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-56">
+                  <DropdownMenuContent className="w-56" align="end">
                     <DropdownMenuItem
                       disabled={
                         event?.event_stage?.name
@@ -592,140 +518,75 @@ const EventDetailsArea = () => {
                         Update Checklist
                       </DropdownMenuItem>
                     )}
-                    {/* <DropdownMenuItem
-                      onClick={() => {
-                        setIsActionsDialogOpen(false);
-                        toast.error('This feature is not available yet', {
-                          description: 'Error',
-                        });
-                      }}
-                    >
-                      Add Expense
-                    </DropdownMenuItem> */}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <Label className="font-semibold">Event Address</Label>
-                  <p className="text-sm">{event?.name}</p>
-                </div>
-                <div>
-                  <Label className="font-semibold">Event Time</Label>
-                  <p className="text-sm">
-                    From {event?.date_begin} <br />
-                    To {event?.date_end} 🕒
-                  </p>
-                </div>
-                <div>
-                  <Label className="font-semibold">Location</Label>
-                  <p className="text-sm">
-                    {event?.region?.name} - {event?.territory?.name}
-                  </p>
-                </div>
-                <div>
-                  <Label className="font-semibold">Event Type</Label>
-                  <p className="text-sm">{event?.event_type?.name}</p>
-                </div>
-                {event?.crops?.length > 0 && (
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <Label className="font-semibold">Crops</Label>
-                    <p className="text-sm">
-                      {event?.crops?.map((item) => item.name).join(', ')}
+                    <Label className="text-sm text-gray-500">Event Address</Label>
+                    <p className="font-medium mt-1">{event?.name}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-gray-500">Event Time</Label>
+                    <p className="font-medium mt-1">
+                      {event?.date_begin} - {event?.date_end}
                     </p>
                   </div>
-                )}
-                {event?.demo_products?.length > 0 && (
                   <div>
-                    <Label className="font-semibold text-lg">Products</Label>
-                    <p className="text-sm">
-                      {event?.demo_products
-                        ?.map((item) => item.name)
-                        .join(', ')}
+                    <Label className="text-sm text-gray-500">Location</Label>
+                    <p className="font-medium mt-1">
+                      {event?.region?.name} - {event?.territory?.name}
                     </p>
                   </div>
-                )}
-                {/* <div>
-                <Label className="font-semibold text-lg">Attendees</Label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                  {attendeeList.map((item, index) => {
-                    const isAttended = item.attended_event_ids.includes(
-                      Number(event.id)
-                    );
-                    return (
-                      <Card key={index}>
-                        <CardContent className="p-4">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm font-semibold flex-1">
-                              {item.name}
-                            </span>
-                            {isAttended ? (
-                              <CheckCheck className="h-5 w-5 text-blue-600" />
-                            ) : (
-                              <span
-                                className={`text-xs px-2 py-1 rounded ${statusStyles.pending}`}
-                              >
-                                Pending
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600">
-                            Phone No: {item.phone_no}
-                          </p>
-                          <p className="text-sm text-gray-600">
-                            Land Area: {item.land_area} Acre
-                          </p>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                  {attendeeList.length === 0 && (
-                    <div className="text-center text-gray-500 col-span-2">
-                      {attendeeLoading ? (
-                        <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-                      ) : (
-                        'No attendees found'
-                      )}
+                  <div>
+                    <Label className="text-sm text-gray-500">Event Type</Label>
+                    <p className="font-medium mt-1">{event?.event_type?.name}</p>
+                  </div>
+                  {event?.crops?.length > 0 && (
+                    <div className="md:col-span-2">
+                      <Label className="text-sm text-gray-500">Crops</Label>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {event?.crops?.map((item, idx) => (
+                          <span key={idx} className="bg-green-50 text-green-700 px-2 py-1 rounded text-sm font-medium border border-green-100">
+                            {item.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {event?.demo_products?.length > 0 && (
+                    <div className="md:col-span-2">
+                      <Label className="text-sm text-gray-500">Products</Label>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {event?.demo_products?.map((item, idx) => (
+                          <span key={idx} className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-sm font-medium border border-blue-100">
+                            {item.name}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
-              </div>
-              <div>
-                <Label className="font-semibold text-lg">Expenses</Label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                  {eventExpenses.map((item, index) => (
-                    <ExpensesCard key={index} item={item} />
-                  ))}
-                  {eventExpenses.length === 0 && (
-                    <div className="text-center text-gray-500 col-span-2">
-                      {attendeeLoading ? (
-                        <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-                      ) : (
-                        'No Expense found'
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div> */}
               </CardContent>
             </Card>
 
             {/* Event Images Section */}
             {event?.images && event.images.length > 0 && (
               <Card>
-                <CardHeader>
+                <CardHeader className="border-b pb-4">
                   <CardTitle className="text-lg font-semibold">
                     Event Images
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-6">
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                     {event.images.map((imageUrl: string, index: number) => (
-                      <div key={index} className="relative group">
+                      <div key={index} className="relative group aspect-square">
                         <img
                           src={imageUrl}
                           alt={`Event image ${index + 1}`}
-                          className="w-full h-32 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
+                          className="w-full h-full object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity border border-gray-100"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedEventImage(imageUrl);
@@ -735,15 +596,15 @@ const EventDetailsArea = () => {
                           }}
                         />
                         <div
-                          className="absolute inset-0 rounded-md flex items-center justify-center"
+                          className="absolute inset-0 rounded-lg flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-all cursor-pointer"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedEventImage(imageUrl);
                           }}
                         >
                           <Eye
-                            className="text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                            size={20}
+                            className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 drop-shadow-md"
+                            size={24}
                           />
                         </div>
                       </div>
@@ -755,47 +616,52 @@ const EventDetailsArea = () => {
 
             {attendeeList.length > 0 && (
               <Card>
-                <CardHeader>
+                <CardHeader className="border-b pb-4">
                   <CardTitle className="text-lg font-semibold">
-                    Attendees
+                    Attendees ({attendeeList.length})
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="pt-6">
                   {attendeeLoading ? (
-                    <div className="flex justify-center">
-                      <Loader2 className="h-6 w-6 animate-spin" />
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
                     </div>
                   ) : attendeeList.length === 0 ? (
-                    <p className="text-center text-sm text-gray-500">
+                    <p className="text-center text-sm text-gray-500 py-8">
                       No attendees found
                     </p>
                   ) : (
-                    attendeeList.map((item, index) => {
-                      // Check farmer_verify instead of attended_event_ids for "Farmer Host" tag
-                      const isFarmerHost = item.farmer_verify;
-                      return (
-                        <Card key={index} className={`w-full`}>
-                          <CardContent className="p-4 space-y-2">
-                            <div className="flex justify-between items-center">
-                              <p className="text-sm font-semibold flex-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {attendeeList.map((item, index) => {
+                        const isFarmerHost = item.farmer_verify;
+                        return (
+                          <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-100 hover:shadow-sm transition-shadow">
+                            <div className="flex justify-between items-start mb-2">
+                              <p className="font-semibold text-gray-900">
                                 {item.name}
                               </p>
                               {isFarmerHost && (
                                 <span
-                                  className={`text-xs px-2 py-1 rounded ${statusStyles.sent}`}
+                                  className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusStyles.sent}`}
                                 >
-                                  Farmer Host
+                                  Host
                                 </span>
                               )}
                             </div>
-                            <p className="text-sm">Phone No: {item.phone_no}</p>
-                            <p className="text-sm">
-                              Land Area: {item.land_area} Acre
-                            </p>
-                          </CardContent>
-                        </Card>
-                      );
-                    })
+                            <div className="space-y-1 text-sm text-gray-600">
+                              <p className="flex items-center gap-2">
+                                <span className="text-gray-400 text-xs uppercase tracking-wider">Phone</span>
+                                {item.phone_no}
+                              </p>
+                              <p className="flex items-center gap-2">
+                                <span className="text-gray-400 text-xs uppercase tracking-wider">Area</span>
+                                {item.land_area} Acre
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -803,20 +669,22 @@ const EventDetailsArea = () => {
 
             {eventExpenses.length > 0 && (
               <Card>
-                <CardHeader>
+                <CardHeader className="border-b pb-4">
                   <CardTitle className="text-lg font-semibold">
-                    Expenses
+                    Expenses ({eventExpenses.length})
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {eventExpenses.map((item, index) => (
-                    <ExpensesCard
-                      key={index}
-                      item={item}
-                      toggleExpenseImages={toggleExpenseImages}
-                      setToggleExpenseImages={setToggleExpenseImages}
-                    />
-                  ))}
+                <CardContent className="pt-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {eventExpenses.map((item, index) => (
+                      <ExpensesCard
+                        key={index}
+                        item={item}
+                        toggleExpenseImages={toggleExpenseImages}
+                        setToggleExpenseImages={setToggleExpenseImages}
+                      />
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             )}

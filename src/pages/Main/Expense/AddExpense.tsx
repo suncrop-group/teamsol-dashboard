@@ -160,8 +160,7 @@ const AddExpenseReporting = () => {
       }
     }
 
-    setLoading(false);
-    setAddExpenseLoading(false);
+
 
     const data: {
       name: string;
@@ -228,7 +227,6 @@ const AddExpenseReporting = () => {
       //  event_id: data?.event_id ? data?.event_id : null,
       // First upload the images to the server
       callApi('POST', '/expense/create', { ...dbData }, onSuccessDB, onError);
-      setLoading(false);
     };
 
     const onError = () => {

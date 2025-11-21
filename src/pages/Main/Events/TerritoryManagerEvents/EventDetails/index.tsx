@@ -9,8 +9,13 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { CheckCheck, Eye, MoreVertical, Trash2, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
@@ -45,6 +50,8 @@ const ExpensesCard = ({
   item,
   toggleExpenseImages,
   setToggleExpenseImages,
+  cancelOrder,
+  canMakeAction,
 }: {
   item: {
     id: string;
@@ -59,6 +66,8 @@ const ExpensesCard = ({
   };
   toggleExpenseImages: string[];
   setToggleExpenseImages: React.Dispatch<React.SetStateAction<string[]>>;
+  cancelOrder?: (id: string) => void;
+  canMakeAction?: boolean;
 }) => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
@@ -84,6 +93,17 @@ const ExpensesCard = ({
           </div>
           <div className="flex justify-between items-end">
             <span className="text-sm text-gray-600">#{item?.id}</span>
+            {cancelOrder && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                onClick={() => cancelOrder(item.id)}
+                disabled={!canMakeAction || item.odooStatus !== 'draft'}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
           </div>
           <div className="flex justify-between items-center mt-2">
             <div className="flex flex-col gap-2 flex-1">
@@ -247,7 +267,7 @@ const TMCreatedEventDetails = () => {
   });
   const [isAttendeeDialogOpen, setIsAttendeeDialogOpen] = useState(false);
   const [isStageDialogOpen, setIsStageDialogOpen] = useState(false);
-  const [isActionsDialogOpen, setIsActionsDialogOpen] = useState(false);
+
 
   const fetchAttendees = () => {
     const onSuccessfulFetch = (data) => {
@@ -444,7 +464,7 @@ const TMCreatedEventDetails = () => {
 
   const fetchEventStagesList = () => {
     const onSuccess = (response) => {
-      setIsActionsDialogOpen(false);
+
       setUpdateStatusFetching(false);
       setIsStageDialogOpen(true);
       setEventStageList(response.data);
@@ -667,173 +687,252 @@ const TMCreatedEventDetails = () => {
     }
   };
 
+  const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(
+    null
+  );
+  const [isExpenseCancelDialogOpen, setIsExpenseCancelDialogOpen] =
+    useState(false);
+  const [expenseCancelLoading, setExpenseCancelLoading] = useState(false);
+
+  const cancelExpense = () => {
+    if (!selectedExpenseId) return;
+
+    const onDBSuccess = () => {
+      setExpenseCancelLoading(false);
+      setSelectedExpenseId(null);
+      setIsExpenseCancelDialogOpen(false);
+      fetchEventDetails(false);
+      toast.success('Expense cancelled successfully');
+    };
+
+    const onDBError = (error: { message?: string; error?: string }) => {
+      setExpenseCancelLoading(false);
+      setSelectedExpenseId(null);
+      setIsExpenseCancelDialogOpen(false);
+      toast.error(error?.message || 'Something went wrong. Please try again.');
+    };
+
+    const onSuccess = (response: {
+      status: string;
+      error?: string;
+      data?: {
+        id: string;
+      };
+    }) => {
+      if (response.status === 'success') {
+        callApi(
+          'PATCH',
+          '/expense/status',
+          {
+            id: selectedExpenseId,
+            status: 'cancelled',
+            company_id: user.company.id,
+          },
+          onDBSuccess,
+          onDBError
+        );
+      } else {
+        setExpenseCancelLoading(false);
+        toast.error(
+          response?.error || 'Something went wrong. Please try again.'
+        );
+      }
+    };
+    const onError = (error: { message?: string; error?: string }) => {
+      setExpenseCancelLoading(false);
+      setSelectedExpenseId(null);
+      setIsExpenseCancelDialogOpen(false);
+      toast.error(error?.message || 'Something went wrong. Please try again.');
+    };
+    setExpenseCancelLoading(true);
+
+    const data = {
+      expense_id: selectedExpenseId,
+      company_id: user.company.id,
+      event_id:event.id,
+      expense_category_id: eventExpenses.find((item)=> item.id === selectedExpenseId).category_id
+      
+    };
+    
+    callServerAPI('POST', `/delete/expenses`, { data }, onSuccess, onError);
+  };
+
+  
+
   return (
-    <div className="">
+    <div className="container">
       {loading ? (
         <div className="flex justify-center items-center h-64">
           <Loader2 className="h-8 w-8 animate-spin" />
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="flex flex-col gap-6">
             <Card>
-              <CardHeader className="flex flex-row justify-between items-center">
-                <CardTitle>Event Detail #{event?.id}</CardTitle>
-                <Dialog
-                  open={isActionsDialogOpen}
-                  onOpenChange={setIsActionsDialogOpen}
-                >
-                  <DialogTrigger asChild>
+              <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
+                <CardTitle className="text-xl">Event Detail #{event?.id}</CardTitle>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon">
                       <MoreVertical className="h-5 w-5" />
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Actions</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-2 flex flex-col">
-                      {!event?.event_stage?.name
-                        ?.toLowerCase()
-                        ?.includes('cancel') && (
-                        <>
-                          <Button
-                            disabled={
-                              !canMakeAction ||
-                              event?.event_stage?.name
-                                ?.toLowerCase()
-                                ?.includes('cancel') ||
-                              event?.event_stage?.name
-                                ?.toLowerCase()
-                                ?.includes('complete') ||
-                              event?.verified
-                            }
-                            onClick={() => {
-                              setIsActionsDialogOpen(false);
-                              setIsAttendeeDialogOpen(true);
-                            }}
-                          >
-                            Add Attendees
-                          </Button>
-                          <Button
-                            disabled={
-                              !canMakeAction ||
-                              event?.event_stage?.name
-                                ?.toLowerCase()
-                                ?.includes('cancel') ||
-                              event?.event_stage?.name
-                                ?.toLowerCase()
-                                ?.includes('complete') ||
-                              event?.verified
-                            }
-                            onClick={() => {
-                              setIsActionsDialogOpen(false);
-                              navigate('/expenses/add', {
-                                state: {
-                                  event_id: event.id,
-                                  event_title: event.name,
-                                  event_description: event.event_type.name,
-                                },
-                              });
-                            }}
-                          >
-                            Add Expense
-                          </Button>
-                        </>
-                      )}
-                      <Button
-                        disabled={
-                          updateStatusFetching ||
-                          event?.event_stage?.name
-                            ?.toLowerCase()
-                            ?.includes('cancel') ||
-                          event?.verified ||
-                          event?.event_stage?.name
-                            ?.toLowerCase()
-                            ?.includes('complete') ||
-                          !canMakeAction
-                        }
-                        onClick={fetchEventStagesList}
-                      >
-                        {event?.event_stage?.name
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56" align="end">
+                    {!event?.event_stage?.name
+                      ?.toLowerCase()
+                      ?.includes('cancel') && (
+                      <>
+                        <DropdownMenuItem
+                          disabled={
+                            !canMakeAction ||
+                            event?.event_stage?.name
+                              ?.toLowerCase()
+                              ?.includes('cancel') ||
+                            event?.event_stage?.name
+                              ?.toLowerCase()
+                              ?.includes('complete') ||
+                            event?.verified
+                          }
+                          onClick={() => {
+                            setIsAttendeeDialogOpen(true);
+                          }}
+                        >
+                          Add Attendees
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={
+                            !canMakeAction ||
+                            event?.event_stage?.name
+                              ?.toLowerCase()
+                              ?.includes('cancel') ||
+                            event?.event_stage?.name
+                              ?.toLowerCase()
+                              ?.includes('complete') ||
+                            event?.verified
+                          }
+                          onClick={() => {
+                            navigate('/expenses/add', {
+                              state: {
+                                event_id: event.id,
+                                event_title: event.name,
+                                event_description: event.event_type.name,
+                              },
+                            });
+                          }}
+                        >
+                          Add Expense
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    <DropdownMenuItem
+                      disabled={
+                        updateStatusFetching ||
+                        event?.event_stage?.name
                           ?.toLowerCase()
-                          ?.includes('cancel')
-                          ? 'Cancelled'
-                          : event?.verified
-                          ? 'Verified'
-                          : updateStatusFetching
-                          ? 'Getting Event Stages...'
-                          : 'Update Event Stage'}
-                      </Button>
-                      <p className="text-sm text-gray-500 text-center">
-                        Actions can only be performed at least four days after
-                        the event's end date, and the event has not been
-                        cancelled.
-                      </p>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                          ?.includes('cancel') ||
+                        event?.verified ||
+                        event?.event_stage?.name
+                          ?.toLowerCase()
+                          ?.includes('complete') ||
+                        !canMakeAction
+                      }
+                      onClick={fetchEventStagesList}
+                    >
+                      {event?.event_stage?.name?.toLowerCase()?.includes('cancel')
+                        ? 'Cancelled'
+                        : event?.verified
+                        ? 'Verified'
+                        : updateStatusFetching
+                        ? 'Getting Event Stages...'
+                        : 'Update Event Stage'}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <Label className="font-semibold">Event Address</Label>
-                  <p className="text-sm">{event?.name}</p>
-                </div>
-                <div>
-                  <Label className="font-semibold">Event Time</Label>
-                  <p className="text-sm">
-                    From {event?.date_begin} <br />
-                    To {event?.date_end} 🕒
-                  </p>
-                </div>
-                <div>
-                  <Label className="font-semibold">Location</Label>
-                  <p className="text-sm">
-                    {event?.region?.name} - {event?.territory?.name}
-                  </p>
-                </div>
-                <div>
-                  <Label className="font-semibold">Event Type</Label>
-                  <p className="text-sm">{event?.event_type?.name}</p>
-                </div>
-                <div>
-                  <Label className="font-semibold">Crops</Label>
-                  <p className="text-sm">
-                    {event?.crops?.map((item) => item.name).join(', ')}
-                  </p>
-                </div>
-                <div>
-                  <Label className="font-semibold text-lg">Products</Label>
-                  <p className="text-sm">
-                    {event?.demo_products?.map((item) => item.name).join(', ')}
-                  </p>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <Label className="text-sm text-gray-500">Event Address</Label>
+                    <p className="font-medium mt-1">{event?.name}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-gray-500">Event Time</Label>
+                    <p className="font-medium mt-1">
+                      {event?.date_begin} - {event?.date_end}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-gray-500">Location</Label>
+                    <p className="font-medium mt-1">
+                      {event?.region?.name} - {event?.territory?.name}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-gray-500">Event Type</Label>
+                    <p className="font-medium mt-1">{event?.event_type?.name}</p>
+                  </div>
+                  {event?.crops?.length > 0 && (
+                    <div className="md:col-span-2">
+                      <Label className="text-sm text-gray-500">Crops</Label>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {event?.crops?.map((item, idx) => (
+                          <span
+                            key={idx}
+                            className="bg-green-50 text-green-700 px-2 py-1 rounded text-sm font-medium border border-green-100"
+                          >
+                            {item.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {event?.demo_products?.length > 0 && (
+                    <div className="md:col-span-2">
+                      <Label className="text-sm text-gray-500">Products</Label>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {event?.demo_products?.map((item, idx) => (
+                          <span
+                            key={idx}
+                            className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-sm font-medium border border-blue-100"
+                          >
+                            {item.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
             {/* Event Images Section */}
             {event?.images && event.images.length > 0 && (
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle>Event Images</CardTitle>
+              <Card>
+                <CardHeader className="border-b pb-4">
+                  <CardTitle className="text-lg font-semibold">
+                    Event Images
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-6">
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                     {event.images.map((imageUrl: string, index: number) => (
-                      <div key={index} className="relative group">
+                      <div key={index} className="relative group aspect-square">
                         <img
                           src={imageUrl}
                           alt={`Event image ${index + 1}`}
-                          className="w-full h-32 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
+                          className="w-full h-full object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity border border-gray-100"
                           onClick={() => setSelectedEventImage(imageUrl)}
                           onError={(e) => {
                             e.currentTarget.style.display = 'none';
                           }}
                         />
-                        <div className="absolute bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 rounded-md flex items-center justify-center">
+                        <div
+                          className="absolute inset-0 rounded-lg flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-all cursor-pointer"
+                          onClick={() => setSelectedEventImage(imageUrl)}
+                        >
                           <Eye
-                            className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                            size={20}
+                            className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 drop-shadow-md"
+                            size={24}
                           />
                         </div>
                         {/* Delete button */}
@@ -845,7 +944,7 @@ const TMCreatedEventDetails = () => {
                             <Button
                               variant="destructive"
                               size="icon"
-                              className="absolute top-1 right-1 h-6 w-6"
+                              className="absolute top-2 right-2 h-8 w-8 shadow-sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 deleteEventImage(imageUrl);
@@ -853,9 +952,9 @@ const TMCreatedEventDetails = () => {
                               disabled={eventImagesRemoving.includes(imageUrl)}
                             >
                               {eventImagesRemoving.includes(imageUrl) ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
+                                <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
-                                <Trash2 className="h-3 w-3" />
+                                <Trash2 className="h-4 w-4" />
                               )}
                             </Button>
                           )}
@@ -870,11 +969,13 @@ const TMCreatedEventDetails = () => {
             {canMakeAction &&
               !event?.event_stage?.name?.toLowerCase()?.includes('cancel') &&
               !event?.verified && (
-                <Card className="mt-6">
-                  <CardHeader>
-                    <CardTitle>Upload Event Images</CardTitle>
+                <Card>
+                  <CardHeader className="border-b pb-4">
+                    <CardTitle className="text-lg font-semibold">
+                      Upload Event Images
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     <div className="space-y-4">
                       <div className="flex items-center gap-4">
                         <Input
@@ -917,101 +1018,121 @@ const TMCreatedEventDetails = () => {
                 </Card>
               )}
 
-            <Card className="mt-6">
-              <CardContent>
-                <div>
-                  <Label className="font-semibold text-lg">Attendees</Label>
-                  <div className="space-y-4 mt-2">
+            <Card>
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="text-lg font-semibold">
+                  Attendees ({attendeeList.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {attendeeLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                  </div>
+                ) : attendeeList.length === 0 ? (
+                  <p className="text-center text-sm text-gray-500 py-8">
+                    No attendees found
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {attendeeList.map((item, index) => {
-                      // Check farmer_verify instead of attended_event_ids for "Farmer Host" tag
                       const isFarmerHost = item.farmer_verify;
                       const isRemoving = attendeesRemoving.includes(item.id);
                       return (
-                        <Card key={item.id} className={`w-full`}>
-                          <CardContent className="p-4">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-semibold flex-1">
-                                {index + 1}. {item.name}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                {isFarmerHost && (
-                                  <span
-                                    className={`text-xs px-2 py-1 rounded ${statusStyles.sent}`}
-                                  >
-                                    Farmer Host
-                                  </span>
-                                )}
-                                {canMakeAction && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => {
-                                      setRemovingAttendeeId(item.id);
-                                      setIsAttendeeRemoveDialogOpen(true);
-                                    }}
-                                    disabled={isRemoving}
-                                  >
-                                    {isRemoving ? (
-                                      <Loader2 className="h-4 w-4 animate-spin text-red-600" />
-                                    ) : (
-                                      <Trash2 className="h-4 w-4 text-red-600" />
-                                    )}
-                                  </Button>
-                                )}
-                              </div>
+                        <div
+                          key={item.id}
+                          className="bg-gray-50 rounded-lg p-4 border border-gray-100 hover:shadow-sm transition-shadow"
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <p className="font-semibold text-gray-900">
+                              {index + 1}. {item.name}
+                            </p>
+                            <div className="flex items-center gap-2">
+                              {isFarmerHost && (
+                                <span
+                                  className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusStyles.sent}`}
+                                >
+                                  Host
+                                </span>
+                              )}
+                              {canMakeAction && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 -mt-1 -mr-1 text-gray-400 hover:text-red-600"
+                                  onClick={() => {
+                                    setRemovingAttendeeId(item.id);
+                                    setIsAttendeeRemoveDialogOpen(true);
+                                  }}
+                                  disabled={isRemoving}
+                                >
+                                  {isRemoving ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              )}
                             </div>
-                            <p className="text-sm text-gray-600">
-                              Phone No: {item.phone_no}
+                          </div>
+                          <div className="space-y-1 text-sm text-gray-600">
+                            <p className="flex items-center gap-2">
+                              <span className="text-gray-400 text-xs uppercase tracking-wider">
+                                Phone
+                              </span>
+                              {item.phone_no}
                             </p>
-                            <p className="text-sm text-gray-600">
-                              Land Area: {item.land_area} Acre
+                            <p className="flex items-center gap-2">
+                              <span className="text-gray-400 text-xs uppercase tracking-wider">
+                                Area
+                              </span>
+                              {item.land_area} Acre
                             </p>
-                          </CardContent>
-                        </Card>
+                          </div>
+                        </div>
                       );
                     })}
-                    {attendeeList.length === 0 && (
-                      <div className="text-center text-gray-500">
-                        {attendeeLoading ? (
-                          <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-                        ) : (
-                          'No attendees found'
-                        )}
-                      </div>
-                    )}
                   </div>
-                </div>
+                )}
               </CardContent>
             </Card>
 
-            <Card className="mt-6">
-              <CardContent>
-                <div>
-                  <Label className="font-semibold text-lg">Expenses</Label>
-                  <div className="space-y-4 mt-2">
+            <Card>
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="text-lg font-semibold">
+                  Expenses ({eventExpenses.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {eventExpenses.length === 0 ? (
+                  <p className="text-center text-sm text-gray-500 py-8">
+                    No Expense found
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {eventExpenses.map((item, index) => (
                       <ExpensesCard
                         key={index}
                         item={item}
                         toggleExpenseImages={toggleExpenseImages}
                         setToggleExpenseImages={setToggleExpenseImages}
+                        canMakeAction={canMakeAction}
+                        cancelOrder={() => {
+                          setSelectedExpenseId(item.id);
+                          setIsExpenseCancelDialogOpen(true);
+                        }}
                       />
                     ))}
-                    {eventExpenses.length === 0 && (
-                      <div className="text-center text-gray-500">
-                        {attendeeLoading ? (
-                          <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-                        ) : (
-                          'No Expense found'
-                        )}
-                      </div>
-                    )}
                   </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>
+
+          <p className="text-xs text-gray-500 text-center mt-4">
+            Actions can only be performed at least four days after the event's end
+            date, and the event has not been cancelled.
+          </p>
 
           <Dialog
             open={isAttendeeDialogOpen}
@@ -1220,6 +1341,50 @@ const TMCreatedEventDetails = () => {
                       </>
                     ) : (
                       'Yes'
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Expense Cancel Confirmation Dialog */}
+          <Dialog
+            open={isExpenseCancelDialogOpen}
+            onOpenChange={setIsExpenseCancelDialogOpen}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Cancel Expense</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Are you sure you want to cancel this expense #
+                  {selectedExpenseId}? This action cannot be undone.
+                </p>
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsExpenseCancelDialogOpen(false);
+                      setSelectedExpenseId(null);
+                    }}
+                    disabled={expenseCancelLoading}
+                  >
+                    No
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={cancelExpense}
+                    disabled={expenseCancelLoading}
+                  >
+                    {expenseCancelLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Cancelling...
+                      </>
+                    ) : (
+                      'Yes, Cancel'
                     )}
                   </Button>
                 </div>
