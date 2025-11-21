@@ -248,6 +248,10 @@ const EventDetailsOfRegionalManagerEvent = () => {
   const [toggleExpenseImages, setToggleExpenseImages] = useState([]);
   const [eventImagesRemoving, setEventImagesRemoving] = useState([]);
   const [selectedEventImage, setSelectedEventImage] = useState(null);
+  const [attendeesRemoving, setAttendeesRemoving] = useState([]);
+  const [removingAttendeeId, setRemovingAttendeeId] = useState(null);
+  const [isAttendeeRemoveDialogOpen, setIsAttendeeRemoveDialogOpen] =
+    useState(false);
 
   const fetchAttendees = () => {
     setAttendeeLoading(true);
@@ -685,6 +689,61 @@ const EventDetailsOfRegionalManagerEvent = () => {
     }
   };
 
+  const removeAttendee = async () => {
+    if (!canMakeAction) return;
+    if (!removingAttendeeId) return;
+    if (attendeesRemoving.includes(removingAttendeeId)) {
+      toast.error('Attendee is already being removed');
+      return;
+    }
+
+    setAttendeesRemoving((prev) => [...prev, removingAttendeeId]);
+
+    try {
+      // First delete from server
+      await new Promise((resolve, reject) => {
+        callServerAPI(
+          'POST',
+          '/post/attendees/delete',
+          {
+            data: {
+              event_id: event.id,
+              attendee_id: removingAttendeeId,
+            },
+          },
+          resolve,
+          reject
+        );
+      });
+
+      // Then delete from local database
+      await new Promise((resolve, reject) => {
+        callApi(
+          'DELETE',
+          `/events/attendee?event_id=${event.id}&attendee_id=${removingAttendeeId}`,
+          null,
+          resolve,
+          reject
+        );
+      });
+
+      toast.success('Attendee removed successfully');
+      setAttendeeList((prev) =>
+        prev.filter((attendee) => attendee.id !== removingAttendeeId)
+      );
+      fetchEventDetails(false);
+      setIsAttendeeRemoveDialogOpen(false);
+      setRemovingAttendeeId(null);
+    } catch (error) {
+      console.error('Remove attendee error:', error);
+      toast.error('Failed to remove attendee');
+    } finally {
+      setAttendeesRemoving((prev) =>
+        prev.filter((id) => id !== removingAttendeeId)
+      );
+    }
+  };
+
   const endDate = parseCustomDate(event?.date_end);
   const canMakeAction = dayjs().isBefore(dayjs(endDate).add(4, 'day'));
 
@@ -1111,20 +1170,41 @@ const EventDetailsOfRegionalManagerEvent = () => {
                   attendeeList.map((item, index) => {
                     // Check farmer_verify instead of attended_event_ids for "Farmer Host" tag
                     const isFarmerHost = item.farmer_verify;
+                    const isRemoving = attendeesRemoving.includes(item.id);
                     return (
                       <Card key={index} className="w-full">
                         <CardContent className="p-4 space-y-2">
                           <div className="flex justify-between items-center">
                             <p className="text-sm font-semibold flex-1">
-                              {item.name}
+                              {index + 1}. {item.name}
                             </p>
-                            {isFarmerHost && (
-                              <span
-                                className={`text-xs px-2 py-1 rounded ${statusStyles.sent}`}
-                              >
-                                Farmer Host
-                              </span>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {isFarmerHost && (
+                                <span
+                                  className={`text-xs px-2 py-1 rounded ${statusStyles.sent}`}
+                                >
+                                  Farmer Host
+                                </span>
+                              )}
+                              {canMakeAction && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => {
+                                    setRemovingAttendeeId(item.id);
+                                    setIsAttendeeRemoveDialogOpen(true);
+                                  }}
+                                  disabled={isRemoving}
+                                >
+                                  {isRemoving ? (
+                                    <Loader2 className="h-4 w-4 animate-spin text-red-600" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                  )}
+                                </Button>
+                              )}
+                            </div>
                           </div>
                           <p className="text-sm">Phone No: {item.phone_no}</p>
                           <p className="text-sm">
@@ -1397,6 +1477,59 @@ const EventDetailsOfRegionalManagerEvent = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Attendee Remove Confirmation Dialog */}
+      <Dialog
+        open={isAttendeeRemoveDialogOpen}
+        onOpenChange={setIsAttendeeRemoveDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Attendee</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Are you sure you want to remove this attendee #
+              {removingAttendeeId}?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsAttendeeRemoveDialogOpen(false);
+                  setRemovingAttendeeId(null);
+                }}
+                disabled={
+                  removingAttendeeId
+                    ? attendeesRemoving.includes(removingAttendeeId)
+                    : false
+                }
+              >
+                No
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={removeAttendee}
+                disabled={
+                  removingAttendeeId
+                    ? attendeesRemoving.includes(removingAttendeeId)
+                    : false
+                }
+              >
+                {removingAttendeeId &&
+                attendeesRemoving.includes(removingAttendeeId) ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Removing...
+                  </>
+                ) : (
+                  'Yes'
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

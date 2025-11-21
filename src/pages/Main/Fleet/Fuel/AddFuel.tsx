@@ -38,8 +38,10 @@ const AddFuel = () => {
     id: string;
     name: string;
     category: string;
+    is_attachment?: boolean;
   } | null>(null);
   const [file, setFile] = useState(null);
+  const [attachmentAllowed, setAttachmentAllowed] = useState(false);
 
   const getPreviousReading = async () => {
     const onSuccess = (response: {
@@ -81,20 +83,30 @@ const AddFuel = () => {
   }, [serviceType, vehicle?.vehicle_id]);
 
   useEffect(() => {
+    if (serviceType?.is_attachment) {
+      setAttachmentAllowed(true);
+    } else {
+      setAttachmentAllowed(false);
+      setFile(null);
+    }
+  }, [serviceType]);
+
+  useEffect(() => {
     const fetchServiceTypes = async () => {
       const onSuccess = (response: {
         data: Array<{
           id: string;
           name: string;
           category: string;
+          is_attachment?: boolean;
         }>;
       }) => {
-        setServiceType(
-          response.data.find(
-            (item: { category: string; id: string; name: string }) =>
-              item.category === 'fuel'
-          )
+        const fuelService = response.data.find(
+          (item: { category: string; id: string; name: string; is_attachment?: boolean }) =>
+            item.category === 'fuel'
         );
+        setServiceType(fuelService);
+        setLoading(false);
       };
       const onError = () => {
         setLoading(false);
@@ -142,6 +154,11 @@ const AddFuel = () => {
       return;
     }
 
+    if (!file && attachmentAllowed) {
+      toast.error('Please upload a receipt image');
+      return;
+    }
+
     if (Number(currentReading) < Number(lastReading)) {
       toast.error('Current reading should be greater than last reading');
       return;
@@ -152,14 +169,25 @@ const AddFuel = () => {
       return;
     }
 
+    // Show loader immediately
+    setLoading(true);
+    setButtonLoading(true);
+
     let uploadImage = '';
 
-    if (file) {
-      uploadImage = await uploadToCloudinary(
-        file,
-        `fuel-${user.name}/${dayjs().format('MMMM-YYYY')}`,
-        `${file.name}`
-      );
+    if (file && attachmentAllowed) {
+      try {
+        uploadImage = await uploadToCloudinary(
+          file,
+          `fuel-${user.name}/${dayjs().format('MMMM-YYYY')}`,
+          `fuel-${user.name}-${dayjs().format('DD-MM-YYYY')}-${dayjs().format('HH-mm-ss')}`
+        );
+      } catch (error) {
+        setLoading(false);
+        setButtonLoading(false);
+        toast.error('Failed to upload image');
+        return;
+      }
     }
 
     const data = {
@@ -222,8 +250,6 @@ const AddFuel = () => {
       toast.error(`Failed to add fuel: ${error.message || 'Unknown error'}`);
     };
 
-    setLoading(true);
-    setButtonLoading(true);
     callServerAPI('POST', '/post/fleet', { data }, onSuccess, onError);
   };
 
@@ -315,16 +341,23 @@ const AddFuel = () => {
                   onChange={(e) => setFuelLitres(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="file">Upload File</Label>
-                <Input
-                  id="file"
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={handleFileChange}
-                  className="cursor-pointer"
-                />
-              </div>
+              {attachmentAllowed && (
+                <div className="space-y-2">
+                  <Label htmlFor="file">Upload Receipt</Label>
+                  <Input
+                    id="file"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={handleFileChange}
+                    className="cursor-pointer"
+                  />
+                  {file && (
+                    <p className="text-sm text-gray-600">
+                      Selected: {file.name}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-2 md:col-span-2">
                 <Label>Payment Method</Label>
                 <RadioGroup

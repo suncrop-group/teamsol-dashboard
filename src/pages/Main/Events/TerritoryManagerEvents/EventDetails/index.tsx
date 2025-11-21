@@ -215,6 +215,12 @@ const TMCreatedEventDetails = () => {
   const [selectedEventImage, setSelectedEventImage] = useState<string | null>(
     null
   );
+  const [attendeesRemoving, setAttendeesRemoving] = useState<string[]>([]);
+  const [removingAttendeeId, setRemovingAttendeeId] = useState<string | null>(
+    null
+  );
+  const [isAttendeeRemoveDialogOpen, setIsAttendeeRemoveDialogOpen] =
+    useState(false);
   const [attendee, setAttendee] = useState({
     name: '',
     phone_no: '',
@@ -606,6 +612,61 @@ const TMCreatedEventDetails = () => {
     }
   };
 
+  const removeAttendee = async () => {
+    if (!canMakeAction) return;
+    if (!removingAttendeeId) return;
+    if (attendeesRemoving.includes(removingAttendeeId)) {
+      toast.error('Attendee is already being removed');
+      return;
+    }
+
+    setAttendeesRemoving((prev) => [...prev, removingAttendeeId]);
+
+    try {
+      // First delete from server
+      await new Promise((resolve, reject) => {
+        callServerAPI(
+          'POST',
+          '/post/attendees/delete',
+          {
+            data: {
+              event_id: event.id,
+              attendee_id: removingAttendeeId,
+            },
+          },
+          resolve,
+          reject
+        );
+      });
+
+      // Then delete from local database
+      await new Promise((resolve, reject) => {
+        callApi(
+          'DELETE',
+          `/events/attendee?event_id=${event.id}&attendee_id=${removingAttendeeId}`,
+          null,
+          resolve,
+          reject
+        );
+      });
+
+      toast.success('Attendee removed successfully');
+      setAttendeeList((prev) =>
+        prev.filter((attendee) => attendee.id !== removingAttendeeId)
+      );
+      fetchEventDetails(false);
+      setIsAttendeeRemoveDialogOpen(false);
+      setRemovingAttendeeId(null);
+    } catch (error) {
+      console.error('Remove attendee error:', error);
+      toast.error('Failed to remove attendee');
+    } finally {
+      setAttendeesRemoving((prev) =>
+        prev.filter((id) => id !== removingAttendeeId)
+      );
+    }
+  };
+
   return (
     <div className="">
       {loading ? (
@@ -861,23 +922,44 @@ const TMCreatedEventDetails = () => {
                 <div>
                   <Label className="font-semibold text-lg">Attendees</Label>
                   <div className="space-y-4 mt-2">
-                    {attendeeList.map((item) => {
+                    {attendeeList.map((item, index) => {
                       // Check farmer_verify instead of attended_event_ids for "Farmer Host" tag
                       const isFarmerHost = item.farmer_verify;
+                      const isRemoving = attendeesRemoving.includes(item.id);
                       return (
                         <Card key={item.id} className={`w-full`}>
                           <CardContent className="p-4">
                             <div className="flex justify-between items-center">
                               <span className="text-sm font-semibold flex-1">
-                                {item.name}
+                                {index + 1}. {item.name}
                               </span>
-                              {isFarmerHost && (
-                                <span
-                                  className={`text-xs px-2 py-1 rounded ${statusStyles.sent}`}
-                                >
-                                  Farmer Host
-                                </span>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {isFarmerHost && (
+                                  <span
+                                    className={`text-xs px-2 py-1 rounded ${statusStyles.sent}`}
+                                  >
+                                    Farmer Host
+                                  </span>
+                                )}
+                                {canMakeAction && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => {
+                                      setRemovingAttendeeId(item.id);
+                                      setIsAttendeeRemoveDialogOpen(true);
+                                    }}
+                                    disabled={isRemoving}
+                                  >
+                                    {isRemoving ? (
+                                      <Loader2 className="h-4 w-4 animate-spin text-red-600" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4 text-red-600" />
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
                             </div>
                             <p className="text-sm text-gray-600">
                               Phone No: {item.phone_no}
@@ -1091,6 +1173,59 @@ const TMCreatedEventDetails = () => {
               </DialogContent>
             </Dialog>
           )}
+
+          {/* Attendee Remove Confirmation Dialog */}
+          <Dialog
+            open={isAttendeeRemoveDialogOpen}
+            onOpenChange={setIsAttendeeRemoveDialogOpen}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Remove Attendee</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Are you sure you want to remove this attendee #
+                  {removingAttendeeId}?
+                </p>
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsAttendeeRemoveDialogOpen(false);
+                      setRemovingAttendeeId(null);
+                    }}
+                    disabled={
+                      removingAttendeeId
+                        ? attendeesRemoving.includes(removingAttendeeId)
+                        : false
+                    }
+                  >
+                    No
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={removeAttendee}
+                    disabled={
+                      removingAttendeeId
+                        ? attendeesRemoving.includes(removingAttendeeId)
+                        : false
+                    }
+                  >
+                    {removingAttendeeId &&
+                    attendeesRemoving.includes(removingAttendeeId) ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Removing...
+                      </>
+                    ) : (
+                      'Yes'
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </div>

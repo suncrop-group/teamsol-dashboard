@@ -37,12 +37,15 @@ const AddMaintenance = () => {
   const [openDatePicker, setOpenDatePicker] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [loading, setLoading] = useState(false);
-  const [serviceTypes, setServiceTypes] = useState([]);
+  const [serviceTypes, setServiceTypes] = useState<
+    Array<{ id: string; name: string; category: string; is_attachment?: boolean }>
+  >([]);
   const [serviceType, setServiceType] = useState('');
   const [lastReading, setLastReading] = useState('');
   const [odometer, setOdometer] = useState('');
   const [file, setFile] = useState(null);
   const [buttonLoading, setButtonLoading] = useState(false);
+  const [attachmentAllowed, setAttachmentAllowed] = useState(false);
 
   const getPreviousReading = async () => {
     const onSuccess = (response: {
@@ -75,6 +78,20 @@ const AddMaintenance = () => {
   };
 
   useEffect(() => {
+    if (serviceType) {
+      const selectedServiceType = serviceTypes.find(
+        (item) => Number(item.id) === Number(serviceType)
+      );
+      if (selectedServiceType) {
+        setAttachmentAllowed(selectedServiceType?.is_attachment ?? false);
+      } else {
+        setAttachmentAllowed(false);
+        setFile(null);
+      }
+    }
+  }, [serviceType, serviceTypes]);
+
+  useEffect(() => {
     if (serviceType && vehicle.vehicle_id) {
       getPreviousReading();
     }
@@ -86,13 +103,22 @@ const AddMaintenance = () => {
     const fetchServiceTypes = async () => {
       const onSuccess = (response: {
         status: string;
-        data: Array<{ id: string; name: string; category: string }>;
+        data: Array<{
+          id: string;
+          name: string;
+          category: string;
+          is_attachment?: boolean;
+        }>;
       }) => {
         setLoading(false);
         setServiceTypes(
           response.data.filter(
-            (item: { id: string; name: string; category: string }) =>
-              item.category === 'service'
+            (item: {
+              id: string;
+              name: string;
+              category: string;
+              is_attachment?: boolean;
+            }) => item.category === 'service'
           )
         );
       };
@@ -116,7 +142,13 @@ const AddMaintenance = () => {
       return;
     }
 
+    if (!file && attachmentAllowed) {
+      toast.error('Please upload a receipt image');
+      return;
+    }
+
     if (Number(lastReading) > Number(odometer)) {
+      toast.error('Odometer reading should be greater than last reading');
       return;
     }
 
@@ -125,13 +157,24 @@ const AddMaintenance = () => {
       return;
     }
 
+    // Show loader immediately
+    setLoading(true);
+    setButtonLoading(true);
+
     let uploadImage = '';
-    if (file) {
-      uploadImage = await uploadToCloudinary(
-        file,
-        `maintenance-${user.name}/${dayjs().format('MMMM-YYYY')}`,
-        file.name
-      );
+    if (file && attachmentAllowed) {
+      try {
+        uploadImage = await uploadToCloudinary(
+          file,
+          `maintenance-${user.name}/${dayjs().format('MMMM-YYYY')}`,
+          `maintenance-${user.name}-${dayjs().format('DD-MM-YYYY')}-${dayjs().format('HH-mm-ss')}`
+        );
+      } catch (error) {
+        setLoading(false);
+        setButtonLoading(false);
+        toast.error('Failed to upload image');
+        return;
+      }
     }
 
     const data = {
@@ -195,8 +238,6 @@ const AddMaintenance = () => {
       toast.error('Failed to add maintenance record');
     };
 
-    setLoading(true);
-    setButtonLoading(true);
     callServerAPI('POST', '/post/fleet', { data }, onSuccess, onError);
   };
 
@@ -299,16 +340,40 @@ const AddMaintenance = () => {
                   onChange={(e) => setAmount(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="file">Upload File</Label>
-                <Input
-                  id="file"
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setFile(e.target.files[0])}
-                  className="cursor-pointer"
-                />
-              </div>
+              {attachmentAllowed && (
+                <div className="space-y-2">
+                  <Label htmlFor="file">Upload Receipt</Label>
+                  <Input
+                    id="file"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => {
+                      const selectedFile = e.target.files[0];
+                      if (
+                        selectedFile &&
+                        (selectedFile.type.startsWith('image/') ||
+                          selectedFile.type === 'application/pdf')
+                      ) {
+                        if (selectedFile.size > 5 * 1024 * 1024) {
+                          toast.error('File size exceeds 5MB limit');
+                          setFile(null);
+                          return;
+                        }
+                        setFile(selectedFile);
+                      } else {
+                        toast.error('Please select a valid image or PDF file');
+                        setFile(null);
+                      }
+                    }}
+                    className="cursor-pointer"
+                  />
+                  {file && (
+                    <p className="text-sm text-gray-600">
+                      Selected: {file.name}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="remarks">Remarks</Label>
                 <Textarea

@@ -203,9 +203,7 @@ const SalesDetails = () => {
       total: Number(salesOrder.total),
     };
 
-    console.log({ data });
 
-    console.log({ data: JSON.stringify(data) });
 
     callServerAPI(
       'POST',

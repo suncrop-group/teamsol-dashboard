@@ -36,13 +36,14 @@ const AddExpenseReporting = () => {
   const [addExpenseLoading, setAddExpenseLoading] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [openDatePicker, setOpenDatePicker] = useState(false);
+  const [isAttachmentAllowed, setIsAttachmentAllowed] = useState(false);
   const { state } = useLocation(); // state is any or unknown
 
   useEffect(() => {
     const fetchExpensesCategory = async () => {
       const onSuccess = (response: {
         status: string;
-        data: Array<{ id: string; name: string }>;
+        data: Array<{ id: string; name: string; is_attachment?: boolean }>;
       }) => {
         setLoading(false);
         setExpensesCategory(response.data);
@@ -74,6 +75,26 @@ const AddExpenseReporting = () => {
   }));
 
   useEffect(() => {
+    if (expenseCategory) {
+      const selectedCategory = expensesCategory.find(
+        (item: any) => item.id === expenseCategory
+      );
+      if (selectedCategory) {
+        setIsAttachmentAllowed(selectedCategory?.is_attachment ?? false);
+      } else {
+        setIsAttachmentAllowed(false);
+        setFiles([]);
+      }
+    }
+  }, [expenseCategory, expensesCategory]);
+
+  useEffect(() => {
+    if (!isAttachmentAllowed) {
+      setFiles([]);
+    }
+  }, [isAttachmentAllowed]);
+
+  useEffect(() => {
     const { event_id, event_title, event_description } = state || {};
     if (event_id && event_title && event_description) {
       setDescription(`${event_title} - ${event_description}`);
@@ -99,7 +120,7 @@ const AddExpenseReporting = () => {
       return;
     }
 
-    if (!files || files.length === 0) {
+    if ((!files || files.length === 0) && isAttachmentAllowed) {
       toast.error('Please select at least one file');
       return;
     }
@@ -109,15 +130,17 @@ const AddExpenseReporting = () => {
       return;
     }
 
-    let uploadImages: string[] = [];
+    // Show loader immediately
     setLoading(true);
     setAddExpenseLoading(true);
 
-    if (files.length > 0) {
+    let uploadImages: string[] = [];
+
+    if (files.length > 0 && isAttachmentAllowed) {
       const uploadPromises = files.map(async (file, i) => {
         const fileName = `expenses-${user.name}-${dayjs().format(
           'DD-MM-YYYY'
-        )}-${dayjs().format('hh:mm:ss')}-${i}`;
+        )}-${dayjs().format('HH-mm-ss')}-${i}`;
         return await uploadToCloudinary(
           file,
           `expenses-${user.name}/${dayjs().format('MMMM-YYYY')}`,
@@ -214,7 +237,6 @@ const AddExpenseReporting = () => {
       setAddExpenseLoading(false);
     };
 
-    setLoading(true);
     callServerAPI(
       'POST',
       '/post/expense',
@@ -339,54 +361,56 @@ const AddExpenseReporting = () => {
                   onChange={(e) => setAmount(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="file">Upload Files (Max 5)</Label>
-                <Input
-                  id="file"
-                  type="file"
-                  onChange={handleFileChange}
-                  accept="image/*,application/pdf"
-                  className="cursor-pointer"
-                  multiple
-                />
-                {files.length > 0 && (
-                  <div className="mt-2 space-y-2">
-                    <p className="text-sm text-gray-600">
-                      Selected files ({files.length}/5):
-                    </p>
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {files.map((file, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between bg-gray-50 p-2 rounded-md"
-                        >
-                          <span className="text-sm truncate flex-1">
-                            {file.name}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500">
-                              {(file.size / 1024 / 1024).toFixed(2)}MB
+              {isAttachmentAllowed && (
+                <div className="space-y-2">
+                  <Label htmlFor="file">Upload Files (Max 5)</Label>
+                  <Input
+                    id="file"
+                    type="file"
+                    onChange={handleFileChange}
+                    accept="image/*,application/pdf"
+                    className="cursor-pointer"
+                    multiple
+                  />
+                  {files.length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      <p className="text-sm text-gray-600">
+                        Selected files ({files.length}/5):
+                      </p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {files.map((file, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center justify-between bg-gray-50 p-2 rounded-md"
+                          >
+                            <span className="text-sm truncate flex-1">
+                              {file.name}
                             </span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setFiles((prev) =>
-                                  prev.filter((_, i) => i !== index)
-                                );
-                              }}
-                              className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                            >
-                              ✕
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500">
+                                {(file.size / 1024 / 1024).toFixed(2)}MB
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setFiles((prev) =>
+                                    prev.filter((_, i) => i !== index)
+                                  );
+                                }}
+                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                              >
+                                ✕
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="description">Expense Description</Label>
                 <Textarea
