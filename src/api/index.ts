@@ -51,19 +51,19 @@ export const callApi = async (
     const token = store.getState().auth.user?.token;
     const { odooAccessToken } = store.getState().auth;
 
-    const odooAuth = await getServerToken();
+    // const odooAuth = await getServerToken();
 
-    if (!endPoint.includes('login')) {
-      if (!odooAuth.success || !odooAuth.data) {
-        toast.error(
-          'Unable to communicate with Server. Please contact your administrator.'
-        );
-        onError(
-          'Unable to communicate with server. Please contact your administrator ASAP!'
-        );
-        return;
-      }
-    }
+    // if (!endPoint.includes('login')) {
+    //   if (!odooAuth.success || !odooAuth.data) {
+    //     toast.error(
+    //       'Unable to communicate with Server. Please contact your administrator.'
+    //     );
+    //     onError(
+    //       'Unable to communicate with server. Please contact your administrator ASAP!'
+    //     );
+    //     return;
+    //   }
+    // }
     if (odooAccessToken) {
       defaultHeaders['Cookie'] = `session_id=${odooAccessToken}`;
     }
