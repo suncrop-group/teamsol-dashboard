@@ -108,13 +108,24 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
   const user = useSelector(selectUser);
 
   const fetchReportData = async (month) => {
-    const year = new Date().getFullYear();
-    const date = new Date().getDate();
+    const currentMonth = new Date().getMonth() + 1; // 1-indexed
+    const currentYear = new Date().getFullYear();
+    const selectedMonthNum = parseInt(month, 10);
+
+    // If selected month is greater than current month, it's from the previous year
+    const year =
+      selectedMonthNum > currentMonth ? currentYear - 1 : currentYear;
+
+    // If past month, use last day of month. If current month, use today.
+    const day =
+      selectedMonthNum === currentMonth && year === currentYear
+        ? new Date().getDate()
+        : dayjs(`${year}-${month}-01`).endOf('month').date();
 
     setLoading(true);
     callApi(
       'GET',
-      `/reports?month=${month}&year=${year}&day=${date}`,
+      `/reports?month=${month}&year=${year}&day=${day}`,
       null,
       (response) => {
         setLoading(false);
@@ -171,6 +182,11 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
   const onSubmitReport = async () => {
     setLoading(true);
     const month = months.find((month) => month.value === selectedMonth)?.label;
+    const currentMonthNum = new Date().getMonth() + 1;
+    const currentYear = new Date().getFullYear();
+    const selectedMonthNum = parseInt(selectedMonth, 10);
+    const selectedYear =
+      selectedMonthNum > currentMonthNum ? currentYear - 1 : currentYear;
 
     if (!pdfBase64) {
       setLoading(false);
@@ -192,9 +208,7 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
       const blob = new Blob([byteArray], { type: 'application/pdf' });
       const file = new File(
         [blob],
-        `Expense-Report_${
-          user.name
-        }_${month}-${new Date().getFullYear()}-${dayjs().format(
+        `Expense-Report_${user.name}_${month}-${selectedYear}-${dayjs().format(
           'HH_mm'
         )}`.replace(/ /g, '_'),
         { type: 'application/pdf' }
@@ -202,9 +216,10 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
 
       const uploadImage = await uploadToCloudinary(
         file,
-        `Expense-Report_${
-          user.name
-        }-${month}-${new Date().getFullYear()}`.replace(/ /g, '_'),
+        `Expense-Report_${user.name}-${month}-${selectedYear}`.replace(
+          / /g,
+          '_'
+        ),
         file.name
       );
 
@@ -217,7 +232,7 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
       const data = {
         receiverId: user.manager.id,
         selectedMonth: selectedMonth,
-        selectedYear: new Date().getFullYear(),
+        selectedYear: selectedYear,
         reportURL: uploadImage,
         projectId: user.project.id,
       };
@@ -253,7 +268,12 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
         <DialogTitle>Generate Expense Report</DialogTitle>
       </DialogHeader>
       <div className="space-y-4">
-        {!pdfBase64 && (
+        {loading && (
+          <div className="flex justify-center items-center py-10 h-[200px]">
+            <Loader2 className="h-10 w-10 animate-spin text-gray-500" />
+          </div>
+        )}
+        {!pdfBase64 && !loading && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Select Month
@@ -272,7 +292,7 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
             </Select>
           </div>
         )}
-        {pdfBase64 && (
+        {pdfBase64 && !loading && (
           <div className="flex justify-center">
             <iframe
               src={`data:application/pdf;base64,${pdfBase64}`}
