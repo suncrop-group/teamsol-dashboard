@@ -203,8 +203,6 @@ const SalesDetails = () => {
       total: Number(salesOrder.total),
     };
 
-
-
     callServerAPI(
       'POST',
       '/post/order',

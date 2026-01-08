@@ -111,7 +111,7 @@ const AddOrders = () => {
     };
 
     if (!data.policies.length) {
-      toast.error('No policies available for the selected customer');
+      // toast.error('No policies available for the selected customer');
       return;
     }
 
@@ -207,7 +207,7 @@ const AddOrders = () => {
             }))
             .concat({
               label: selectedCustomer.name,
-              value: selectedCustomer.name,
+              value: selectedCustomer.id,
             })
         );
         setIsDeliveryAddressAvailable(true);
@@ -347,6 +347,10 @@ const AddOrders = () => {
       employee_id: Number(user.id),
       company_id: Number(company.id),
       warehouse_id: Number(warehouse.id),
+      delivery_id:
+        Number(deliveryAddress) === customer.id
+          ? null
+          : Number(deliveryAddress),
       order_id: 0,
       lines: [
         {

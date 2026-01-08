@@ -403,6 +403,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
       is_verify: 'True',
       is_verified: true,
       verified_by: user?.id,
+      rsm_comments: '',
     };
 
     callServerAPI(

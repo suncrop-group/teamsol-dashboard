@@ -342,6 +342,7 @@ const EventDetailsArea = () => {
       is_verify: 'True',
       is_verified: true,
       verified_by: user?.id,
+      rsm_comments: '',
     };
 
     setVerifyEventLoading(true);
@@ -451,7 +452,9 @@ const EventDetailsArea = () => {
           <div className="flex flex-col gap-6">
             <Card>
               <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
-                <CardTitle className="text-xl">Event Detail #{event?.id}</CardTitle>
+                <CardTitle className="text-xl">
+                  Event Detail #{event?.id}
+                </CardTitle>
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -524,7 +527,9 @@ const EventDetailsArea = () => {
               <CardContent className="pt-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <Label className="text-sm text-gray-500">Event Address</Label>
+                    <Label className="text-sm text-gray-500">
+                      Event Address
+                    </Label>
                     <p className="font-medium mt-1">{event?.name}</p>
                   </div>
                   <div>
@@ -541,14 +546,19 @@ const EventDetailsArea = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-gray-500">Event Type</Label>
-                    <p className="font-medium mt-1">{event?.event_type?.name}</p>
+                    <p className="font-medium mt-1">
+                      {event?.event_type?.name}
+                    </p>
                   </div>
                   {event?.crops?.length > 0 && (
                     <div className="md:col-span-2">
                       <Label className="text-sm text-gray-500">Crops</Label>
                       <div className="flex flex-wrap gap-2 mt-2">
                         {event?.crops?.map((item, idx) => (
-                          <span key={idx} className="bg-green-50 text-green-700 px-2 py-1 rounded text-sm font-medium border border-green-100">
+                          <span
+                            key={idx}
+                            className="bg-green-50 text-green-700 px-2 py-1 rounded text-sm font-medium border border-green-100"
+                          >
                             {item.name}
                           </span>
                         ))}
@@ -560,7 +570,10 @@ const EventDetailsArea = () => {
                       <Label className="text-sm text-gray-500">Products</Label>
                       <div className="flex flex-wrap gap-2 mt-2">
                         {event?.demo_products?.map((item, idx) => (
-                          <span key={idx} className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-sm font-medium border border-blue-100">
+                          <span
+                            key={idx}
+                            className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-sm font-medium border border-blue-100"
+                          >
                             {item.name}
                           </span>
                         ))}
@@ -635,7 +648,10 @@ const EventDetailsArea = () => {
                       {attendeeList.map((item, index) => {
                         const isFarmerHost = item.farmer_verify;
                         return (
-                          <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-100 hover:shadow-sm transition-shadow">
+                          <div
+                            key={index}
+                            className="bg-gray-50 rounded-lg p-4 border border-gray-100 hover:shadow-sm transition-shadow"
+                          >
                             <div className="flex justify-between items-start mb-2">
                               <p className="font-semibold text-gray-900">
                                 {item.name}
@@ -650,11 +666,15 @@ const EventDetailsArea = () => {
                             </div>
                             <div className="space-y-1 text-sm text-gray-600">
                               <p className="flex items-center gap-2">
-                                <span className="text-gray-400 text-xs uppercase tracking-wider">Phone</span>
+                                <span className="text-gray-400 text-xs uppercase tracking-wider">
+                                  Phone
+                                </span>
                                 {item.phone_no}
                               </p>
                               <p className="flex items-center gap-2">
-                                <span className="text-gray-400 text-xs uppercase tracking-wider">Area</span>
+                                <span className="text-gray-400 text-xs uppercase tracking-wider">
+                                  Area
+                                </span>
                                 {item.land_area} Acre
                               </p>
                             </div>

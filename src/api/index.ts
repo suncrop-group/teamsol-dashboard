@@ -4,7 +4,6 @@ import { store } from '../redux/store';
 export const AUTHORIZE = 'AUTHORIZE';
 export const NETWORK_ERROR = 'NETWORK ERROR';
 export const BASE_URL = 'https://teamsol-api.suncropgroup.com.pk';
-// export const BASE_URL = 'http://localhost:3001';
 import { toast } from 'sonner';
 
 export const Method = {
@@ -50,6 +49,24 @@ export const callApi = async (
   try {
     const url = BASE_URL + endPoint;
     const token = store.getState().auth.user?.token;
+    const { odooAccessToken } = store.getState().auth;
+
+    const odooAuth = await getServerToken();
+
+    if (!endPoint.includes('login')) {
+      if (!odooAuth.success || !odooAuth.data) {
+        toast.error(
+          'Unable to communicate with Server. Please contact your administrator.'
+        );
+        onError(
+          'Unable to communicate with server. Please contact your administrator ASAP!'
+        );
+        return;
+      }
+    }
+    if (odooAccessToken) {
+      defaultHeaders['Cookie'] = `session_id=${odooAccessToken}`;
+    }
 
     if (multipart) {
       defaultHeaders['Content-Type'] = 'multipart/form-data';
@@ -124,6 +141,7 @@ const getServerToken = async () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          Cookie: `session_id=${odooAccessToken}`,
         },
       }
     );
