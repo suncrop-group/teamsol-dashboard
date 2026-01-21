@@ -13,7 +13,6 @@ import {
 import { useSelector } from 'react-redux';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import { selectLogo } from '@/redux/slices/ProjectSlice';
-import { BASE_URL } from '@/api';
 import { Logo } from '@/assets/images';
 import { selectModules } from '@/redux/slices/AppStateSlice';
 
@@ -22,10 +21,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const logo = useSelector(selectLogo);
   const modules = useSelector(selectModules);
 
-  const logoURL = React.useMemo(
-    () => `${BASE_URL}/uploads/projects/${logo}`,
-    [logo]
-  );
+  const logoURL = React.useMemo(() => `${logo}`, [logo]);
   const [imageSource, setImageSource] = React.useState(logoURL);
 
   const handleError = () => {

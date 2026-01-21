@@ -61,7 +61,7 @@ const AddDailyActivity: React.FC = () => {
 
   const handleInputChange = (
     field: keyof ActivityFormData,
-    value: string | Date
+    value: string | Date,
   ) => {
     setFormData((prev) => ({
       ...prev,
@@ -94,7 +94,7 @@ const AddDailyActivity: React.FC = () => {
         },
         () => {
           setExistingDatesLoading(false);
-        }
+        },
       );
     }
   }, [initialPassedDates.length, user?.id]);
@@ -126,7 +126,7 @@ const AddDailyActivity: React.FC = () => {
           closing_meter: '0',
           km_traveled: '0',
         }));
-      }
+      },
     );
   }, [user?.id, user?.company_id]);
 
@@ -164,7 +164,7 @@ const AddDailyActivity: React.FC = () => {
   const validateForm = () => {
     const requiredFields = ['area_visited', 'description', 'closing_meter'];
     const missingFields = requiredFields.filter(
-      (field) => !formData[field as keyof ActivityFormData]
+      (field) => !formData[field as keyof ActivityFormData],
     );
 
     if (missingFields.length > 0) {
@@ -191,7 +191,8 @@ const AddDailyActivity: React.FC = () => {
     const selectedDateString = dayjs(formData.date).format('YYYY-MM-DD');
     if (
       existingActivities.some(
-        (activity: ExistingActivityDate) => activity.date === selectedDateString
+        (activity: ExistingActivityDate) =>
+          activity.date === selectedDateString,
       )
     ) {
       toast.error('Daily activity already exists for this date');
@@ -241,7 +242,7 @@ const AddDailyActivity: React.FC = () => {
               user?.territories?.map((t: { id: string | number }) => t.id) ||
               [],
             id: response.data.id,
-        
+
             remarks: formData.remarks,
           };
 
@@ -264,7 +265,7 @@ const AddDailyActivity: React.FC = () => {
                 description: 'Please try again',
               });
               setLoading(false);
-            }
+            },
           );
         },
         (error) => {
@@ -276,7 +277,7 @@ const AddDailyActivity: React.FC = () => {
             : 'Failed to save daily activity';
           toast.error(msg, { description: 'Please try again' });
           setLoading(false);
-        }
+        },
       );
     } catch (error) {
       console.error('Unexpected error:', error);
@@ -345,7 +346,7 @@ const AddDailyActivity: React.FC = () => {
                       // Disable dates that already have activities
                       const dateString = dayjs(date).format('YYYY-MM-DD');
                       const hasExistingActivity = existingActivities.some(
-                        (activity) => activity.date === dateString
+                        (activity) => activity.date === dateString,
                       );
 
                       return hasExistingActivity;
@@ -438,8 +439,6 @@ const AddDailyActivity: React.FC = () => {
               />
             </div>
 
-         
-
             {/* Remarks */}
             <div className="space-y-2">
               <Label htmlFor="remarks">Remarks</Label>
@@ -455,11 +454,12 @@ const AddDailyActivity: React.FC = () => {
             {/* Check if activity already exists for selected date */}
             {existingActivities.some(
               (activity) =>
-                activity.date === dayjs(formData.date).format('YYYY-MM-DD')
+                activity.date === dayjs(formData.date).format('YYYY-MM-DD'),
             ) ? (
               <div className="w-full p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800 font-medium">
-                  Daily activity already exists for this date. Please select a different date.
+                  Daily activity already exists for this date. Please select a
+                  different date.
                 </p>
               </div>
             ) : (

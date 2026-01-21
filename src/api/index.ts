@@ -3,8 +3,7 @@ import { logout, setOdooAccessToken } from '../redux/slices/AuthSlice';
 import { store } from '../redux/store';
 export const AUTHORIZE = 'AUTHORIZE';
 export const NETWORK_ERROR = 'NETWORK ERROR';
-export const BASE_URL =
-  'https://qum0ou3hfi.execute-api.ap-south-1.amazonaws.com/dev';
+export const BASE_URL = 'https://teamsol-api-serverless.suncropgroup.com.pk';
 import { toast } from 'sonner';
 
 export const Method = {
@@ -40,7 +39,7 @@ export const callApi = async (
   onSuccess: (response: Record<string>) => void,
   // @ts-ignore eslint-disable-next-line
   onError: (error: Record<string>) => void,
-  multipart: boolean = false
+  multipart: boolean = false,
 ) => {
   if (!navigator.onLine) {
     toast.error('No internet connection');
@@ -86,10 +85,10 @@ export const callApi = async (
         method == 'GET'
           ? null
           : method == 'DELETE'
-          ? null
-          : multipart
-          ? bodyParams
-          : JSON.stringify(bodyParams),
+            ? null
+            : multipart
+              ? bodyParams
+              : JSON.stringify(bodyParams),
       credentials: 'include' as RequestCredentials, // Include cookies in the request
     };
     if (bodyParams == null) {
@@ -130,7 +129,7 @@ const getServerToken = async () => {
     setOdooAccessToken({
       access_token: '',
       expires_in: 0,
-    })
+    }),
   );
 
   try {
@@ -144,7 +143,7 @@ const getServerToken = async () => {
           'Content-Type': 'application/json',
           Cookie: `session_id=${odooAccessToken}`,
         },
-      }
+      },
     );
 
     const responseJson = await response.json();
@@ -163,7 +162,7 @@ const getServerToken = async () => {
       setOdooAccessToken({
         access_token: responseJson.data.cookie,
         expires_in: responseJson.data.expires,
-      })
+      }),
     );
 
     // set the cookie if needed
@@ -187,7 +186,7 @@ export const callServerAPI = async (
   onSuccess: (response: Record<string, unknown>) => void,
   onError: (error: unknown) => void,
   multipart: boolean = false,
-  excludeApi: boolean = false
+  excludeApi: boolean = false,
 ) => {
   try {
     const isConnected = navigator.onLine;
@@ -203,10 +202,10 @@ export const callServerAPI = async (
 
     if (!odooAuth.success || !odooAuth.data) {
       toast.error(
-        'Unable to communicate with Server. Please contact your administrator.'
+        'Unable to communicate with Server. Please contact your administrator.',
       );
       onError(
-        'Unable to communicate with server. Please contact your administrator ASAP!'
+        'Unable to communicate with server. Please contact your administrator ASAP!',
       );
       return;
     }
@@ -273,7 +272,7 @@ export const convertToFormData = (data: Record<string, unknown>): FormData => {
 
 export const uploadToCloudinary = async (
   file: { uri: string; type: string; name: string },
-  folderName: string
+  folderName: string,
 ) => {
   const data = new FormData();
   data.append('file', {
@@ -289,7 +288,7 @@ export const uploadToCloudinary = async (
     {
       method: 'POST',
       body: data,
-    }
+    },
   );
   const json = await res.json();
   if (json.error) {

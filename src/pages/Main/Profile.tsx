@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import { selectLogo } from '@/redux/slices/ProjectSlice';
-import { BASE_URL, callApi } from '@/api';
+import { callApi } from '@/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -29,7 +29,7 @@ const ProfileSettings = () => {
         ?.map((t) => t.name)
         .join(', ')
         ?.trim() || 'N/A',
-    [user?.territories]
+    [user?.territories],
   );
   const warehouses = useMemo(
     () =>
@@ -37,20 +37,20 @@ const ProfileSettings = () => {
         ?.map((w) => w.name)
         .join(', ')
         ?.trim() || 'N/A',
-    [user?.warehouses]
+    [user?.warehouses],
   );
   // const territoriesCount = user?.territories?.length || 0;
   // const warehousesCount = user?.warehouses?.length || 0;
   // // const territoriesText = territoriesCount > 1 ? 'Territories' : 'Territory';
   // // const warehousesText = warehousesCount > 1 ? 'Warehouses' : 'Warehouse';
 
-  const logoURL = logo ? `${BASE_URL}/uploads/projects/${logo}` : fallbackLogo;
+  const logoURL = logo ? `${logo}` : fallbackLogo;
 
   // Change password handler
   const handleChangePassword = (
     e:
       | React.MouseEvent<HTMLButtonElement, MouseEvent>
-      | React.FormEvent<HTMLFormElement>
+      | React.FormEvent<HTMLFormElement>,
   ) => {
     e.preventDefault();
 
@@ -95,7 +95,7 @@ const ProfileSettings = () => {
     const onError = (error) => {
       toast.dismiss(); // Dismiss loading toast
       toast.error(
-        error?.message || 'Failed to change password. Please try again.'
+        error?.message || 'Failed to change password. Please try again.',
       );
     };
 
@@ -105,7 +105,7 @@ const ProfileSettings = () => {
       '/employee/update-password',
       { password, current_password: currentPassword },
       onSuccess,
-      onError
+      onError,
     );
   };
 

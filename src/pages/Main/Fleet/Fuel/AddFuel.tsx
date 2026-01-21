@@ -70,7 +70,7 @@ const AddFuel = () => {
         },
       },
       onSuccess,
-      onError
+      onError,
     );
   };
 
@@ -102,8 +102,12 @@ const AddFuel = () => {
         }>;
       }) => {
         const fuelService = response.data.find(
-          (item: { category: string; id: string; name: string; is_attachment?: boolean }) =>
-            item.category === 'fuel'
+          (item: {
+            category: string;
+            id: string;
+            name: string;
+            is_attachment?: boolean;
+          }) => item.category === 'fuel',
         );
         setServiceType(fuelService);
         setLoading(false);
@@ -180,9 +184,9 @@ const AddFuel = () => {
         uploadImage = await uploadToCloudinary(
           file,
           `fuel-${user.name}/${dayjs().format('MMMM-YYYY')}`,
-          `fuel-${user.name}-${dayjs().format('DD-MM-YYYY')}-${dayjs().format('HH-mm-ss')}`
+          `fuel-${user.name}-${dayjs().format('DD-MM-YYYY')}-${dayjs().format('HH-mm-ss')}`,
         );
-      } catch (error) {
+      } catch {
         setLoading(false);
         setButtonLoading(false);
         toast.error('Failed to upload image');
@@ -240,7 +244,7 @@ const AddFuel = () => {
           url: uploadImage || '',
         },
         onCreateSuccess,
-        onCreateError
+        onCreateError,
       );
     };
 
@@ -272,7 +276,7 @@ const AddFuel = () => {
                       variant="outline"
                       className={cn(
                         'w-full justify-start text-left font-normal',
-                        !date && 'text-muted-foreground'
+                        !date && 'text-muted-foreground',
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
@@ -287,7 +291,7 @@ const AddFuel = () => {
                         date > new Date() ||
                         date <
                           new Date(
-                            new Date().setDate(new Date().getDate() - 5)
+                            new Date().setDate(new Date().getDate() - 5),
                           ) ||
                         date.getDate() === new Date().getDate()
                       }
