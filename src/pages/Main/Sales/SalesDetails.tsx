@@ -63,6 +63,7 @@ interface SalesOrderData {
   lines: SalesOrderLine[];
   total: number;
   order_id: number;
+  delivery_id: number;
 }
 
 interface SalesOrder {
@@ -82,6 +83,7 @@ interface SalesOrder {
   employee_id?: number;
   company_id?: number;
   total?: number;
+  delivery_id?: number;
 }
 
 const policyTypesName = {
@@ -100,8 +102,9 @@ const SalesDetails = () => {
   const [saveLoading, setSaveLoading] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
   const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>(
-    []
+    [],
   );
+
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
 
   const [salesOrder, setSalesOrder] = useState<SalesOrder>({
@@ -116,6 +119,7 @@ const SalesDetails = () => {
     policy_type: 'is_advance',
     createdByCustomer: false,
     warehouse_id: null,
+    delivery_id: null,
   });
 
   const fetchWarehouses = async () => {
@@ -170,7 +174,7 @@ const SalesDetails = () => {
           order_sequence: order_sequence,
         },
         onSuccessDBOrder,
-        onErrorOrder
+        onErrorOrder,
       );
     };
 
@@ -201,22 +205,36 @@ const SalesDetails = () => {
         discount: Number(line.discount),
       })),
       total: Number(salesOrder.total),
+      delivery_id: Number(salesOrder.delivery_id) || salesOrder.partner_id,
     };
+
+    // console.log({ data });
+
+    // return;
 
     callServerAPI(
       'POST',
       '/post/order',
       {
-        data,
+        data: {
+          ...data,
+          partner_id:
+            !isNaN(Number(salesOrder.delivery_id)) &&
+            Number(salesOrder.delivery_id) !== 0
+              ? Number(salesOrder.delivery_id)
+              : salesOrder.partner_id,
+        },
       },
       onOrderOdooSuccess,
-      onError
+      onError,
     );
   };
 
   const fetchSalesOrders = async () => {
     setLoading(true);
     const onSuccessfulFetch = (data: { data: SalesOrder }) => {
+      console.log({ data: data.data });
+
       setSalesOrder(data?.data);
       setLoading(false);
     };
@@ -266,7 +284,7 @@ const SalesDetails = () => {
       `/sales/cancel?orderId=${salesOrder.order_id}`,
       {},
       onSuccess,
-      onError
+      onError,
     );
   };
 
@@ -301,7 +319,7 @@ const SalesDetails = () => {
                 {salesOrder.createdAt
                   ? `${format(
                       new Date(salesOrder.createdAt),
-                      'MM-dd-yyyy'
+                      'MM-dd-yyyy',
                     )} - ${format(new Date(salesOrder.createdAt), 'hh:mm a')}`
                   : 'N/A'}
               </p>
@@ -315,7 +333,7 @@ const SalesDetails = () => {
               <Badge
                 className={cn(
                   'capitalize',
-                  getStatusStyles(salesOrder.odooStatus)
+                  getStatusStyles(salesOrder.odooStatus),
                 )}
               >
                 {salesOrder.odooStatus || 'N/A'}

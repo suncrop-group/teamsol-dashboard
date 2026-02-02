@@ -46,7 +46,7 @@ const GenerateReport = () => {
     if (!fields) return;
     const dynFields = fields
       .map((field) => ({
-        [field]: '',
+        [field]: field === 'territory_ids' ? [] : '',
         date_from: dayjs(new Date()).format('DD-MM-YYYY'),
         date_to: dayjs(new Date()).format('DD-MM-YYYY'),
       }))
@@ -75,7 +75,7 @@ const GenerateReport = () => {
             res.products.map((product: { name: string; id: string }) => ({
               label: product.name,
               value: product.id,
-            }))
+            })),
           );
         },
         () => {
@@ -83,7 +83,7 @@ const GenerateReport = () => {
           toast.error('Error fetching products', {
             description: 'Please try again',
           });
-        }
+        },
       );
     }
   }, [fields, dynamicFields?.policy_id]);
@@ -99,7 +99,7 @@ const GenerateReport = () => {
             res.data.map((customer) => ({
               label: customer.name,
               value: customer.id,
-            }))
+            })),
           );
         },
         () => {
@@ -107,7 +107,7 @@ const GenerateReport = () => {
           toast.error('Error fetching customers', {
             description: 'Please try again',
           });
-        }
+        },
       );
     }
 
@@ -121,7 +121,7 @@ const GenerateReport = () => {
             res.data.map((policy) => ({
               label: policy.code,
               value: policy.id,
-            }))
+            })),
           );
         },
         () => {
@@ -129,15 +129,23 @@ const GenerateReport = () => {
           toast.error('Error fetching policies', {
             description: 'Please try again',
           });
-        }
+        },
       );
     }
   }, [dynamicFields?.territory_id, dynamicFields?.policy_id]);
 
   const handleGenerateReport = () => {
-    const missingFields = Object.keys(dynamicFields)?.filter(
-      (key) => dynamicFields[key] === '' && !optionalFields?.includes(key)
-    );
+    const missingFields = Object.keys(dynamicFields || {})?.filter((key) => {
+      const value = dynamicFields[key];
+      const isOptional = optionalFields?.includes(key);
+      if (isOptional) return false;
+
+      if (Array.isArray(value)) {
+        return value.length === 0;
+      }
+      return value === '';
+    });
+
     if (missingFields.length > 0) {
       toast.error('All fields are required', {
         description: `Please fill all the required fields.`,
@@ -150,7 +158,7 @@ const GenerateReport = () => {
       const pdfBase64 = `data:application/pdf;base64,${res.data}`;
       setReport(pdfBase64);
       const name = `${title.replace(/\s/g, '_')}-${dayjs().format(
-        'DD_MM_YYYY'
+        'DD_MM_YYYY',
       )}-${dayjs().format('HH_mm_ss')}.pdf`;
       setFileName(name || 'report.pdf');
       toast.success('PDF Generated', {
@@ -182,7 +190,7 @@ const GenerateReport = () => {
       onSuccess,
       onError,
       false,
-      true
+      true,
     );
   };
 
@@ -195,7 +203,7 @@ const GenerateReport = () => {
     try {
       const base64WithoutPrefix = report.replace(
         'data:application/pdf;base64,',
-        ''
+        '',
       );
       const byteCharacters = atob(base64WithoutPrefix);
       const byteNumbers = new Array(byteCharacters.length);
@@ -319,7 +327,7 @@ const GenerateReport = () => {
                       mode="single"
                       selected={dayjs(
                         dynamicFields.date_from,
-                        'DD-MM-YYYY'
+                        'DD-MM-YYYY',
                       ).toDate()}
                       onSelect={(date) => {
                         setDynamicFields({
@@ -354,7 +362,7 @@ const GenerateReport = () => {
                       mode="single"
                       selected={dayjs(
                         dynamicFields.date_to,
-                        'DD-MM-YYYY'
+                        'DD-MM-YYYY',
                       ).toDate()}
                       onSelect={(date) => {
                         setDynamicFields({
@@ -405,6 +413,68 @@ const GenerateReport = () => {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {fields.includes('territory_ids') && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Territories <span className="text-red-500">*</span>
+                </label>
+                <Select
+                  onValueChange={(value) => {
+                    const current = dynamicFields?.territory_ids || [];
+                    const exists = current.includes(value);
+                    const newValue = exists
+                      ? current.filter((id) => id !== value)
+                      : [...current, value];
+                    setDynamicFields({
+                      ...dynamicFields,
+                      territory_ids: newValue,
+                    });
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        dynamicFields?.territory_ids?.length > 0
+                          ? `${dynamicFields.territory_ids.length} territories selected`
+                          : 'Select territories'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {territoriesData.map((territory) => (
+                      <SelectItem key={territory.value} value={territory.value}>
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={dynamicFields?.territory_ids?.includes(
+                              territory.value,
+                            )}
+                            className="pointer-events-none"
+                          />
+                          {territory.label}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {dynamicFields?.territory_ids?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {dynamicFields.territory_ids.map((id) => {
+                      const territory = territoriesData.find(
+                        (t) => t.value === id,
+                      );
+                      return (
+                        <span
+                          key={id}
+                          className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
+                        >
+                          {territory?.label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -551,6 +621,29 @@ const GenerateReport = () => {
                   </div>
                 </div>
               )}
+
+            {fields.includes('is_top_bottom') && (
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="is_top_bottom"
+                    checked={dynamicFields?.is_top_bottom || false}
+                    onCheckedChange={(checked) =>
+                      setDynamicFields({
+                        ...dynamicFields,
+                        is_top_bottom: checked,
+                      })
+                    }
+                  />
+                  <label
+                    htmlFor="is_top_bottom"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Top Bottom
+                  </label>
+                </div>
+              </div>
+            )}
 
             <Button
               onClick={handleGenerateReport}

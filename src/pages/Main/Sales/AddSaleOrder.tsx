@@ -98,7 +98,7 @@ const AddOrders = () => {
 
     const data = {
       policyType: user?.policyTypes.find(
-        (policy) => policy.type === policyTypeFirst
+        (policy) => policy.type === policyTypeFirst,
       ),
       territories: user.territories.find((t) => t.id === territory),
       customer: customers.find((c) => c.id === customerFirst),
@@ -132,7 +132,7 @@ const AddOrders = () => {
             ...data,
             policies: res.data.filter((policy) => policy.sale_active),
             referencePolicies: policiesData.filter(
-              (policy) => policy.remaining_amount > 0
+              (policy) => policy.remaining_amount > 0,
             ),
           };
 
@@ -143,7 +143,7 @@ const AddOrders = () => {
           setPoliciesData([]);
           toast.error('Error fetching reference policies. Please try again');
           setLoading(false);
-        }
+        },
       );
     } else {
       dispatch(setOrderInitialDetails(data));
@@ -172,21 +172,21 @@ const AddOrders = () => {
             res.data.map((customer) => ({
               label: customer.name,
               value: customer.id,
-            }))
+            })),
           );
           setCustomers(res.data);
           setWarehouseData(
             warehouses.map((warehouse) => ({
               label: warehouse.name,
               value: warehouse.id,
-            }))
+            })),
           );
           setWarehouseFirst(warehouses[0]?.id || '');
         },
         () => {
           setCustomersData([]);
           toast.error('Error fetching customers. Please try again');
-        }
+        },
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -208,7 +208,7 @@ const AddOrders = () => {
             .concat({
               label: selectedCustomer.name,
               value: selectedCustomer.id,
-            })
+            }),
         );
         setIsDeliveryAddressAvailable(true);
       }
@@ -216,7 +216,7 @@ const AddOrders = () => {
         user?.policyTypes.map((policy) => ({
           label: policy.name,
           value: policy.type,
-        }))
+        })),
       );
     }
   }, [customerFirst, customers, user?.policyTypes]);
@@ -239,7 +239,7 @@ const AddOrders = () => {
         },
         () => {
           setLoading(false);
-        }
+        },
       );
     }
   }, [customerFirst, policyTypeFirst]);
@@ -247,7 +247,7 @@ const AddOrders = () => {
   useEffect(() => {
     if (deliveryAddressesData.length > 0) {
       setDeliveryAddress(
-        deliveryAddressesData[deliveryAddressesData.length - 1].value
+        deliveryAddressesData[deliveryAddressesData.length - 1].value,
       );
     }
   }, [deliveryAddressesData]);
@@ -266,14 +266,14 @@ const AddOrders = () => {
       delete order?.refPolicy;
       if (Object.values(order).some((value) => value === -1 || value === '')) {
         toast.error(
-          'Please fill all the fields. All fields are required to add a new order.'
+          'Please fill all the fields. All fields are required to add a new order.',
         );
         return;
       }
     } else {
       if (Object.values(order).some((value) => value === -1 || value === '')) {
         toast.error(
-          'Please fill all the fields. All fields are required to add a new order.'
+          'Please fill all the fields. All fields are required to add a new order.',
         );
         return;
       }
@@ -283,16 +283,16 @@ const AddOrders = () => {
       policyType.type !== 'is_secure_credit'
         ? policies.find(
             (policy: { policy_id: number; remaining_amount: number }) =>
-              policy.policy_id === order?.policy
+              policy.policy_id === order?.policy,
           ).remaining_amount
         : referencePolicies.find(
             (policy: { policy_id: number; remaining_amount: number }) =>
-              policy.policy_id === order?.refPolicy
+              policy.policy_id === order?.refPolicy,
           ).remaining_amount;
 
     if (productTotal > remainingAmount) {
       toast.error(
-        `Sorry, you can't add this product. The total amount exceeds the remaining amount of the policy ${remainingAmount}.`
+        `Sorry, you can't add this product. The total amount exceeds the remaining amount of the policy ${remainingAmount}.`,
       );
       return;
     }
@@ -305,14 +305,14 @@ const AddOrders = () => {
       policyType.type !== 'is_secure_credit'
         ? otherProducts.filter(
             (product: { policy: number; refPolicy?: number; total: number }) =>
-              product.policy === order?.policy
+              product.policy === order?.policy,
           )
         : otherProducts.filter(
             (product: {
               refPolicy?: number;
               refPolicyName?: string;
               total: number;
-            }) => product.refPolicy === order?.refPolicy
+            }) => product.refPolicy === order?.refPolicy,
           );
 
     const total = samePolicyProducts.reduce(
@@ -320,14 +320,14 @@ const AddOrders = () => {
         acc: number,
         product: {
           total: number;
-        }
+        },
       ) => acc + product.total,
-      0
+      0,
     );
 
     if (total + productTotal > remainingAmount) {
       toast.error(
-        `Sorry, you can't add this product. The total amount exceeds the remaining amount of the policy ${remainingAmount}.`
+        `Sorry, you can't add this product. The total amount exceeds the remaining amount of the policy ${remainingAmount}.`,
       );
       return;
     }
@@ -348,9 +348,9 @@ const AddOrders = () => {
       company_id: Number(company.id),
       warehouse_id: Number(warehouse.id),
       delivery_id:
-        Number(deliveryAddress) === customer.id
-          ? null
-          : Number(deliveryAddress),
+        !isNaN(Number(deliveryAddress)) && Number(deliveryAddress) !== 0
+          ? Number(deliveryAddress)
+          : Number(customer.id),
       order_id: 0,
       lines: [
         {
@@ -382,7 +382,7 @@ const AddOrders = () => {
             qty: Number(product.unit) * Number(product.noOfPacks),
             price_unit: Number(product.unitPrice.price_unit),
             discount: Number(product.discount.replace('%', '')),
-          })
+          }),
         ),
       ],
     };
@@ -426,14 +426,14 @@ const AddOrders = () => {
                 acc: number,
                 product: {
                   total: number;
-                }
+                },
               ) => acc + product.total,
-              0
+              0,
             ) + productTotal,
           order_sequence: order_sequence,
         },
         onSuccessDBOrder,
-        onErrorOrder
+        onErrorOrder,
       );
     };
 
@@ -446,10 +446,20 @@ const AddOrders = () => {
       'POST',
       '/post/order',
       {
-        data: data,
+        data: {
+          ...data,
+          partner_id:
+            !isNaN(Number(deliveryAddress)) && Number(deliveryAddress) !== 0
+              ? Number(deliveryAddress)
+              : Number(customer.id),
+          delivery_id:
+            !isNaN(Number(deliveryAddress)) && Number(deliveryAddress) !== 0
+              ? Number(deliveryAddress)
+              : Number(customer.id),
+        },
       },
       onOrderOdooSuccess,
-      onError
+      onError,
     );
   };
 
@@ -463,20 +473,20 @@ const AddOrders = () => {
         ...order,
         productName: products.find(
           (product: { id: number; name: string }) =>
-            product.id === order?.product
+            product.id === order?.product,
         )?.name,
         refPolicyName:
           referencePolicies?.find(
             (policy: { code: string; policy_id: number }) =>
-              policy.policy_id === order?.refPolicy
+              policy.policy_id === order?.refPolicy,
           )?.code || '',
         policyName:
           policies.find(
             (policy: { code: string; policy_id: number }) =>
-              policy.policy_id === order?.policy
+              policy.policy_id === order?.policy,
           )?.code || '',
         id: Math.random().toString(36).substring(7) + Math.random() * 1000,
-      })
+      }),
     );
 
     setOrder({
@@ -529,7 +539,7 @@ const AddOrders = () => {
           `/products/get?policy=${order?.policy}&policyType=${policyType?.type}`,
           null,
           onSuccess,
-          onError
+          onError,
         );
       }
 
@@ -540,7 +550,7 @@ const AddOrders = () => {
           `/products/get?policy=${order?.policy}&policyType=${policyType?.type}`,
           null,
           onSuccess,
-          onError
+          onError,
         );
       }
     }
@@ -557,7 +567,7 @@ const AddOrders = () => {
 
         const filteredReferencePolicies = referencePolicies.filter(
           (policy: { code: string; policy_id: number }) =>
-            data.includes(policy.code)
+            data.includes(policy.code),
         );
         if (filteredReferencePolicies.length === 0) {
           setLoading(false);
@@ -575,14 +585,14 @@ const AddOrders = () => {
 
       setLoading(true);
       const refPoliciesCode = referencePolicies.map(
-        (policy: { code: string; policy_id: number }) => policy.code
+        (policy: { code: string; policy_id: number }) => policy.code,
       );
       callApi(
         'GET',
         `/policy/reference-related?policy=${order.policy}&refpolicies=${refPoliciesCode}`,
         {},
         onSuccess,
-        onError
+        onError,
       );
     }
 
@@ -604,7 +614,7 @@ const AddOrders = () => {
 
       const getProductPrice = products?.find(
         (product: { id: number; name: string; standard_price: number }) =>
-          product.id === order?.product
+          product.id === order?.product,
       );
 
       if (getProductPrice && getProductPrice.standard_price) {
@@ -650,7 +660,7 @@ const AddOrders = () => {
           },
         },
         onSuccess,
-        onError
+        onError,
       );
     }
 
@@ -663,7 +673,7 @@ const AddOrders = () => {
         (packaging: { id: number; name: string }) => ({
           label: packaging.name,
           value: packaging.id,
-        })
+        }),
       );
 
       setPackingsData(productPackagings);
@@ -686,7 +696,7 @@ const AddOrders = () => {
         () => {
           setLoading(false);
           toast.error('Error fetching packagings');
-        }
+        },
       );
     }
   }, [order?.product]);
@@ -723,7 +733,7 @@ const AddOrders = () => {
       (product: { id: number; name: string; standard_price: number }) => ({
         label: `${product.name}`,
         value: product.id,
-      })
+      }),
     ) || [];
   const policiesDataSecond =
     policies.map(
@@ -734,7 +744,7 @@ const AddOrders = () => {
       }) => ({
         label: policy.code,
         value: policy.policy_id,
-      })
+      }),
     ) || [];
   const referencePoliciesDataRender =
     referencePoliciesData?.map((policy) => ({

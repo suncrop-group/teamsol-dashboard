@@ -260,6 +260,22 @@ export const saleReports: AccountTiles = [
     code: 'category_wise_sale_analysis_report',
     api_url: 'category/sale/analysis',
   },
+  {
+    title: 'Territory Product Sale Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: [
+      'date_to',
+      'date_from',
+      'territory_ids',
+      'region_id',
+      'is_top_bottom',
+    ],
+    optionalFields: ['is_top_bottom'],
+
+    code: 'territory_product_sale_report',
+    api_url: 'territory/product-sales/report',
+  },
 ];
 
 export const reportSectionTiles = [
