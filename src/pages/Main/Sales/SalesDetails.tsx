@@ -178,7 +178,8 @@ const SalesDetails = () => {
       );
     };
 
-    const onError = () => {
+    const onError = (error) => {
+      console.log({ error });
       setSaveLoading(false);
       toast.error('Failed to create order');
     };
@@ -207,10 +208,6 @@ const SalesDetails = () => {
       total: Number(salesOrder.total),
       delivery_id: Number(salesOrder.delivery_id) || salesOrder.partner_id,
     };
-
-    // console.log({ data });
-
-    // return;
 
     callServerAPI(
       'POST',

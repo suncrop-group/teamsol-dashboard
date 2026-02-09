@@ -3,8 +3,8 @@ import { logout, setOdooAccessToken } from '../redux/slices/AuthSlice';
 import { store } from '../redux/store';
 export const AUTHORIZE = 'AUTHORIZE';
 export const NETWORK_ERROR = 'NETWORK ERROR';
-// export const BASE_URL = 'https://teamsol-api-serverless.suncropgroup.com.pk';
-export const BASE_URL = 'https://teamsol-api-staging.suncropgroup.com.pk';
+export const BASE_URL = 'http://localhost:3001';
+// export const BASE_URL = 'https://teamsol-api-staging.suncropgroup.com.pk';
 import { toast } from 'sonner';
 
 export const Method = {
