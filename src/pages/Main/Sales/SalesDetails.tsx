@@ -73,7 +73,7 @@ interface SalesOrder {
   createdAt: string;
   status: string;
   odooStatus: string;
-  partner: { name: string };
+  partner: { name: string; delivery_address: { id: number; name: string }[] };
   territory: { name: string };
   policy_type: string;
   createdByCustomer: boolean;
@@ -106,6 +106,7 @@ const SalesDetails = () => {
   );
 
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
+  const [deliveryName, setDeliveryName] = useState('');
 
   const [salesOrder, setSalesOrder] = useState<SalesOrder>({
     lines: [],
@@ -114,7 +115,7 @@ const SalesDetails = () => {
     createdAt: '',
     status: '',
     odooStatus: '',
-    partner: { name: '' },
+    partner: { name: '', delivery_address: [] },
     territory: { name: '' },
     policy_type: 'is_advance',
     createdByCustomer: false,
@@ -215,11 +216,7 @@ const SalesDetails = () => {
       {
         data: {
           ...data,
-          partner_id:
-            !isNaN(Number(salesOrder.delivery_id)) &&
-            Number(salesOrder.delivery_id) !== 0
-              ? Number(salesOrder.delivery_id)
-              : salesOrder.partner_id,
+          partner_id: salesOrder.partner_id,
         },
       },
       onOrderOdooSuccess,
@@ -259,6 +256,17 @@ const SalesDetails = () => {
       // Fetch warehouses if createdByCustomer is true and no warehouse_id
       if (salesOrder.createdByCustomer && !salesOrder.warehouse_id) {
         fetchWarehouses();
+      }
+
+      if (salesOrder.partner_id) {
+        if (salesOrder.delivery_id === salesOrder.partner_id) {
+          setDeliveryName(salesOrder.partner?.name);
+        } else {
+          const address = salesOrder.partner?.delivery_address?.find(
+            (addr) => addr.id === salesOrder.delivery_id,
+          );
+          setDeliveryName(address ? address.name : 'N/A');
+        }
       }
     }
   }, [salesOrder]);
@@ -344,6 +352,10 @@ const SalesDetails = () => {
               <p className="text-base text-gray-700">
                 {salesOrder.partner?.name} - {salesOrder.territory?.name}
               </p>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">Delivery Address</h3>
+              <p className="text-base text-gray-700">{deliveryName || 'N/A'}</p>
             </div>
             <div>
               <h3 className="text-lg font-semibold">Policy Type</h3>

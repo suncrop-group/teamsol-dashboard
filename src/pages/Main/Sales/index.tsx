@@ -25,6 +25,7 @@ import {
   User,
   MapPin,
   ShoppingCart,
+  Warehouse,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
@@ -65,7 +66,9 @@ const SalesCard = ({ item, onClick }) => {
             </div>
             <div className="flex items-center gap-2 ml-6">
               <MapPin className="h-3 w-3 text-gray-400" />
-              <span className="text-sm text-gray-600">{item?.territory?.name}</span>
+              <span className="text-sm text-gray-600">
+                {item?.territory?.name}
+              </span>
             </div>
             {item?.createdByCustomer && (
               <Badge className="bg-blue-100 text-blue-700 border-0 text-xs ml-6">
@@ -74,20 +77,31 @@ const SalesCard = ({ item, onClick }) => {
             )}
           </div>
           <div className="flex flex-col gap-1 items-end">
-            <Badge
-              className={`${
-                statusStyles[item?.status?.toLowerCase()]
-              } border-0 text-xs capitalize`}
-            >
-              {item?.status}
-            </Badge>
-            <Badge
-              className={`${
-                statusStyles[item?.odooStatus?.toLowerCase()]
-              } border-0 text-xs capitalize`}
-            >
-              {item?.odooStatus}
-            </Badge>
+            {!item?.warehouse_id &&
+            item?.createdByCustomer &&
+            item.odooStatus.toLowerCase() !== 'cancelled' ? (
+              <Badge className="bg-orange-100 text-orange-700 border-0 text-xs flex items-center gap-1">
+                <Warehouse className="h-3 w-3" />
+                Add warehouse
+              </Badge>
+            ) : (
+              <>
+                <Badge
+                  className={`${
+                    statusStyles[item?.status?.toLowerCase()]
+                  } border-0 text-xs capitalize`}
+                >
+                  {item?.status}
+                </Badge>
+                <Badge
+                  className={`${
+                    statusStyles[item?.odooStatus?.toLowerCase()]
+                  } border-0 text-xs capitalize`}
+                >
+                  {item?.odooStatus}
+                </Badge>
+              </>
+            )}
           </div>
         </div>
 
@@ -95,7 +109,9 @@ const SalesCard = ({ item, onClick }) => {
         <div className="space-y-1 text-sm text-gray-600">
           <div className="flex items-center gap-2">
             <Hash className="h-4 w-4" />
-            <span>#{item?.order_id} - {item?.order_sequence}</span>
+            <span>
+              #{item?.order_id} - {item?.order_sequence}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
@@ -171,20 +187,31 @@ const SalesRow = ({ item, onClick }) => {
       </TableCell>
       <TableCell>
         <div className="flex flex-col gap-1">
-          <Badge
-            className={`${
-              statusStyles[item?.status?.toLowerCase()]
-            } border-0 w-fit capitalize`}
-          >
-            {item?.status}
-          </Badge>
-          <Badge
-            className={`${
-              statusStyles[item?.odooStatus?.toLowerCase()]
-            } border-0 w-fit capitalize`}
-          >
-            {item?.odooStatus}
-          </Badge>
+          {!item?.warehouse_id &&
+          item?.createdByCustomer &&
+          item.odooStatus.toLowerCase() !== 'cancelled' ? (
+            <Badge className="bg-orange-100 text-orange-700 border-0 w-fit text-xs flex items-center gap-1">
+              <Warehouse className="h-3 w-3" />
+              Add warehouse
+            </Badge>
+          ) : (
+            <>
+              <Badge
+                className={`${
+                  statusStyles[item?.status?.toLowerCase()]
+                } border-0 w-fit capitalize`}
+              >
+                {item?.status}
+              </Badge>
+              <Badge
+                className={`${
+                  statusStyles[item?.odooStatus?.toLowerCase()]
+                } border-0 w-fit capitalize`}
+              >
+                {item?.odooStatus}
+              </Badge>
+            </>
+          )}
         </div>
       </TableCell>
     </TableRow>
@@ -209,7 +236,7 @@ const Sales = () => {
       (response) => {
         setLoading(false);
         const sorted = response.data.sort(
-          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
+          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
         );
         setSalesOrders(sorted);
         dispatch(addSales(sorted));
@@ -217,7 +244,7 @@ const Sales = () => {
       () => {
         setLoading(false);
         toast.error('Failed to fetch sales orders');
-      }
+      },
     );
   };
 
@@ -229,9 +256,11 @@ const Sales = () => {
   const filteredSalesOrders = salesOrders.filter(
     (item) =>
       item?.partner?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item?.territory?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item?.territory?.name
+        ?.toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
       item?.order_id?.toString().includes(searchQuery) ||
-      item?.order_sequence?.toLowerCase().includes(searchQuery.toLowerCase())
+      item?.order_sequence?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
@@ -277,7 +306,8 @@ const Sales = () => {
                     : 'No sales orders found.'}
                 </p>
                 <p className="text-gray-400 text-sm mt-2 mb-4">
-                  {!searchQuery && 'Create your first sales order to get started.'}
+                  {!searchQuery &&
+                    'Create your first sales order to get started.'}
                 </p>
                 {!searchQuery && (
                   <Button onClick={() => navigate('/sales/add')}>
@@ -293,8 +323,12 @@ const Sales = () => {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-gray-50 hover:bg-gray-50">
-                        <TableHead className="font-semibold">Order ID</TableHead>
-                        <TableHead className="font-semibold">Partner & Territory</TableHead>
+                        <TableHead className="font-semibold">
+                          Order ID
+                        </TableHead>
+                        <TableHead className="font-semibold">
+                          Partner & Territory
+                        </TableHead>
                         <TableHead className="font-semibold">Total</TableHead>
                         <TableHead className="font-semibold">Date</TableHead>
                         <TableHead className="font-semibold">Status</TableHead>

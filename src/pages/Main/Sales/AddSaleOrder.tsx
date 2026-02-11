@@ -448,10 +448,7 @@ const AddOrders = () => {
       {
         data: {
           ...data,
-          partner_id:
-            !isNaN(Number(deliveryAddress)) && Number(deliveryAddress) !== 0
-              ? Number(deliveryAddress)
-              : Number(customer.id),
+          partner_id: Number(customer.id),
           delivery_id:
             !isNaN(Number(deliveryAddress)) && Number(deliveryAddress) !== 0
               ? Number(deliveryAddress)
@@ -924,7 +921,8 @@ const AddOrders = () => {
                 // label="No of Packs"
                 placeholder="Number of packs"
                 value={order?.noOfPacks}
-                disabled={true}
+                onChange={(e) => handleChange('noOfPacks', e.target.value)}
+                disabled={packingsData.length === 0}
               />
             </div>
 
