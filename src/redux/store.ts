@@ -6,6 +6,7 @@ import projectSlice from './slices/ProjectSlice';
 import SalesSlice from './slices/SalesSlice';
 import NotificationsSlice from './slices/NotificationsSlice';
 import AppStateSlice from './slices/AppStateSlice';
+import systemSlice from './slices/SystemSlice';
 import {
   persistStore,
   persistReducer,
@@ -21,7 +22,7 @@ import {
 const persistConfig = {
   key: 'root',
   storage,
-  blacklist: ['sales', 'orderCreation'], // Only persist the auth slice
+  blacklist: ['sales', 'orderCreation', 'system'], // system shouldn't be persisted to avoid stale maintenance state
 };
 
 // Root reducer
@@ -32,12 +33,13 @@ const rootReducer = {
   sales: SalesSlice,
   notifications: NotificationsSlice,
   appState: AppStateSlice,
+  system: systemSlice,
 };
 
 // Create persisted reducer
 const persistedReducer = persistReducer(
   persistConfig,
-  combineReducers(rootReducer)
+  combineReducers(rootReducer),
 );
 
 // Store configuration

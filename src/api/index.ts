@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import { logout, setOdooAccessToken } from '../redux/slices/AuthSlice';
+import { setMaintenanceMode } from '../redux/slices/SystemSlice';
 import { store } from '../redux/store';
 export const AUTHORIZE = 'AUTHORIZE';
 export const NETWORK_ERROR = 'NETWORK ERROR';
-// export const BASE_URL = 'https://teamsol-api-serverless.suncropgroup.com.pk';
-export const BASE_URL = 'https://teamsol-api-staging.suncropgroup.com.pk';
+export const BASE_URL = 'https://teamsol-api-serverless.suncropgroup.com.pk';
 import { toast } from 'sonner';
 
 export const Method = {
@@ -52,19 +52,6 @@ export const callApi = async (
     const token = store.getState().auth.user?.token;
     const { odooAccessToken } = store.getState().auth;
 
-    // const odooAuth = await getServerToken();
-
-    // if (!endPoint.includes('login')) {
-    //   if (!odooAuth.success || !odooAuth.data) {
-    //     toast.error(
-    //       'Unable to communicate with Server. Please contact your administrator.'
-    //     );
-    //     onError(
-    //       'Unable to communicate with server. Please contact your administrator ASAP!'
-    //     );
-    //     return;
-    //   }
-    // }
     if (odooAccessToken) {
       defaultHeaders['Cookie'] = `session_id=${odooAccessToken}`;
     }
@@ -102,6 +89,16 @@ export const callApi = async (
 
     if (response?.status < 400) {
       onSuccess(responseJson);
+    } else if (response?.status === 503 && responseJson.maintenance) {
+      // System is under maintenance
+      store.dispatch(
+        setMaintenanceMode({
+          isUnderMaintenance: true,
+          message: responseJson.message,
+          maintenanceUntil: responseJson.maintenanceUntil,
+        }),
+      );
+      onError(responseJson);
     } else {
       if (responseJson.message === 'Invalid token') {
         store.dispatch(logout());
@@ -243,7 +240,10 @@ export const callServerAPI = async (
     const response = await fetch(`${BASE_URL}/web/call-odoo-api`, fetchObject);
 
     const contentType = response.headers.get('Content-Type');
-    let responseJson = {};
+    let responseJson: { maintenance?: boolean; message?: string } & Record<
+      string,
+      unknown
+    > = {};
     if (contentType && contentType.includes('application/json')) {
       responseJson = await response.json();
     } else {
@@ -254,6 +254,18 @@ export const callServerAPI = async (
 
     if (response?.status < 400) {
       onSuccess(responseJson);
+    } else if (response?.status === 503 && responseJson?.maintenance) {
+      // System is under maintenance
+      store.dispatch(
+        setMaintenanceMode({
+          isUnderMaintenance: true,
+          message: responseJson?.message,
+          // @ts-ignore
+          maintenanceUntil: responseJson?.maintenanceUntil,
+        }),
+      );
+
+      onError(responseJson);
     } else {
       onError(responseJson);
     }

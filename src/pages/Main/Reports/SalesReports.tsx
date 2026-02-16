@@ -14,8 +14,8 @@ const SalesReports = () => {
       ?.map((item) =>
         saleReports.find(
           (tile) =>
-            tile?.code?.toLowerCase() === item?.module?.code.toLowerCase()
-        )
+            tile?.code?.toLowerCase() === item?.module?.code.toLowerCase(),
+        ),
       )
       .filter(Boolean) || [];
 
@@ -23,7 +23,7 @@ const SalesReports = () => {
     <div className="min-h-screen p-4">
       <div className="container mx-auto max-w-4xl">
         <h1 className="text-2xl font-semibold text-gray-800 mb-4">
-          Collection Reports
+          Sale Reports
         </h1>
         {filteredData.length === 0 ? (
           <div className="flex justify-center items-center h-[calc(100vh-200px)]">

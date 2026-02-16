@@ -224,6 +224,22 @@ export const collectionTiles: AccountTiles = [
     code: 'collection_detail_territory_report',
     api_url: 'cl/detail/territory/report',
   },
+  {
+    title: 'Collection & Commission Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: [
+      'date_to',
+      'date_from',
+      'region_ids',
+      'territory_ids',
+      'is_summary',
+      'policy_id',
+    ],
+    optionalFields: ['policy_id'],
+    code: 'collection_commission_report',
+    api_url: 'bm/collection-commission/report',
+  },
 ];
 
 export const saleReports: AccountTiles = [
@@ -256,10 +272,18 @@ export const saleReports: AccountTiles = [
     title: 'Category Wise Sale Analysis Report',
     icon: Reports,
     path: 'GenerateReport',
-    fields: ['date_to', 'date_from', 'policy_id', 'region_id'],
+    fields: [
+      'date_to',
+      'date_from',
+      'region_ids',
+      'territory_ids',
+      'is_summary',
+    ],
+    optionalFields: ['territory_ids', 'region_ids'],
     code: 'category_wise_sale_analysis_report',
     api_url: 'category/sale/analysis',
   },
+
   {
     title: 'Territory Product Sale Report',
     icon: Reports,

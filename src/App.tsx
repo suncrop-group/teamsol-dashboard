@@ -46,14 +46,20 @@ import SalesReports from './pages/Main/Reports/SalesReports';
 import DailyActivity from './pages/Main/DailyActivity';
 import AddDailyActivity from './pages/Main/DailyActivity/AddDailyActivity';
 import RMAreaActivities from './pages/Main/DailyActivity/RMAreaActivities';
+import MaintenanceScreen from './components/MaintenanceScreen';
+import {
+  selectIsUnderMaintenance,
+  selectMaintenanceMessage,
+  selectMaintenanceUntil,
+} from './redux/slices/SystemSlice';
 
 const ProtectedRoute = ({ children }) => {
   const isAuth = useSelector(selectIsAuthenticated);
   return isAuth ? <Layout>{children}</Layout> : <Navigate to="/auth" replace />;
 };
 
-const RenderEvents = () => {
-  const user = useSelector(selectUser);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const RenderEvents = (user: any) => {
   if (!user?.is_region_manager) {
     return (
       <>
@@ -140,6 +146,20 @@ const RenderEvents = () => {
 };
 
 function App() {
+  const isUnderMaintenance = useSelector(selectIsUnderMaintenance);
+  const maintenanceMessage = useSelector(selectMaintenanceMessage);
+  const maintenanceUntil = useSelector(selectMaintenanceUntil);
+  const user = useSelector(selectUser);
+
+  if (isUnderMaintenance) {
+    return (
+      <MaintenanceScreen
+        message={maintenanceMessage}
+        until={maintenanceUntil}
+      />
+    );
+  }
+
   return (
     <Routes>
       <Route
@@ -358,7 +378,7 @@ function App() {
           </ProtectedRoute>
         }
       />
-      {RenderEvents()}
+      {RenderEvents(user)}
 
       <Route path="/auth" element={<SignIn />} />
       <Route

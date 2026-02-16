@@ -27,7 +27,7 @@ import { saveAs } from 'file-saver';
 
 const GenerateReport = () => {
   const { state } = useLocation();
-  const { title, fields, api_url, optionalFields } = state || {};
+  const { title, fields, api_url, optionalFields, code } = state || {};
   const [loading, setLoading] = useState(false);
   const [dynamicFields, setDynamicFields] = useState(null);
   const { territories, company, region } = useSelector(selectUser);
@@ -41,6 +41,7 @@ const GenerateReport = () => {
   const [productsData, setProductsData] = useState([]);
   const navigate = useNavigate();
   const user = useSelector(selectUser);
+  const isRegionalManager = user?.is_region_manager;
 
   useEffect(() => {
     if (!fields) return;
@@ -61,6 +62,13 @@ const GenerateReport = () => {
         sort_column: 'Sale',
       }));
       setSortColumn('Sale');
+    }
+
+    if (fields?.includes('is_summary')) {
+      setDynamicFields((prev) => ({
+        ...prev,
+        is_summary: 'false',
+      }));
     }
   }, [fields]);
 
@@ -138,6 +146,17 @@ const GenerateReport = () => {
     const missingFields = Object.keys(dynamicFields || {})?.filter((key) => {
       const value = dynamicFields[key];
       const isOptional = optionalFields?.includes(key);
+
+      // Special case for category_wise_sale_analysis_report: territory_ids is optional for Regional Manager
+      if (
+        code === 'category_wise_sale_analysis_report' ||
+        (code === 'collection_commission_report' &&
+          isRegionalManager &&
+          key === 'territory_ids')
+      ) {
+        return false;
+      }
+
       if (isOptional) return false;
 
       if (Array.isArray(value)) {
@@ -146,6 +165,7 @@ const GenerateReport = () => {
       return value === '';
     });
 
+    // console.log(missingFields);
     if (missingFields.length > 0) {
       toast.error('All fields are required', {
         description: `Please fill all the required fields.`,
@@ -178,14 +198,45 @@ const GenerateReport = () => {
       company_id: company.id,
     };
 
-    if (region?.id) {
-      data.region_id = region.id;
+    if (fields.includes('is_summary')) {
+      data.is_summary = dynamicFields.is_summary === 'true';
+    }
+
+    if (
+      code === 'category_wise_sale_analysis_report' ||
+      code === 'collection_commission_report'
+    ) {
+      delete data.region_id;
+      if (isRegionalManager) {
+        // If territories are selected, send empty region_ids
+        if (
+          dynamicFields.territory_ids &&
+          dynamicFields.territory_ids.length > 0
+        ) {
+          data.region_ids = [];
+        } else {
+          // If no territories selected, send region_ids
+          if (region?.id) {
+            // data.region_id = region.id; // Removed as per request
+            data.region_ids = [region.id];
+          }
+        }
+      } else {
+        // Territory Manager: Always empty region_ids
+        data.region_ids = [];
+      }
+    } else {
+      // Default behavior for other reports
+      if (region?.id) {
+        data.region_id = region.id;
+        data.region_ids = [region.id];
+      }
     }
 
     setLoading(true);
     callServerAPI(
       'POST',
-      `/${api_url}`,
+      `${api_url}`,
       { data },
       onSuccess,
       onError,
@@ -229,7 +280,14 @@ const GenerateReport = () => {
         region_id: user.region.id,
       }));
     }
-  }, [user?.region?.id]);
+
+    if (fields?.includes('region_ids')) {
+      setDynamicFields((prev) => ({
+        ...prev,
+        region_ids: [user.region.id],
+      }));
+    }
+  }, [user?.region?.id, fields]);
 
   const territoriesData =
     territories.length > 0
@@ -379,6 +437,18 @@ const GenerateReport = () => {
             )}
 
             {fields.includes('region_id') && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Region
+                </label>
+                <Input
+                  value={user.region?.name || ''}
+                  disabled
+                  className="w-full"
+                />
+              </div>
+            )}
+            {fields.includes('region_ids') && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Region
@@ -573,6 +643,28 @@ const GenerateReport = () => {
                     <SelectItem value="Collection">Collection</SelectItem>
                     <SelectItem value="Debtors">Debtors</SelectItem>
                     <SelectItem value="Creditors">Creditors</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {fields.includes('is_summary') && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Is Summary
+                </label>
+                <Select
+                  value={dynamicFields?.is_summary || 'false'}
+                  onValueChange={(value) =>
+                    setDynamicFields({ ...dynamicFields, is_summary: value })
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select Is Summary" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Yes</SelectItem>
+                    <SelectItem value="false">No</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
