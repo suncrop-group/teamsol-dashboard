@@ -149,10 +149,10 @@ const GenerateReport = () => {
 
       // Special case for category_wise_sale_analysis_report: territory_ids is optional for Regional Manager
       if (
-        code === 'category_wise_sale_analysis_report' ||
-        (code === 'collection_commission_report' &&
-          isRegionalManager &&
-          key === 'territory_ids')
+        (code === 'category_wise_sale_analysis_report' ||
+          code === 'collection_commission_report') &&
+        isRegionalManager &&
+        key === 'territory_ids'
       ) {
         return false;
       }

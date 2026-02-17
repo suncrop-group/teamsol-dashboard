@@ -279,7 +279,7 @@ export const saleReports: AccountTiles = [
       'territory_ids',
       'is_summary',
     ],
-    optionalFields: ['territory_ids', 'region_ids'],
+    optionalFields: ['region_ids'],
     code: 'category_wise_sale_analysis_report',
     api_url: 'category/sale/analysis',
   },

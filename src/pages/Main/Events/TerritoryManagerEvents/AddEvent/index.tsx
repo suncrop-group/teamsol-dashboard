@@ -40,10 +40,12 @@ const AddEvent = () => {
   const [selectedCrops, setSelectedCrops] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState([]);
-  const [cpoName, setCpoName] = useState('');
   const [eventName, setEventName] = useState('');
   const [eventTemId, setEventTemId] = useState('');
   const [eventTemplates, setEventTemplates] = useState([]);
+  const [cpoName, setCpoName] = useState('');
+  const [cpoId, setCpoId] = useState('');
+  const [cpos, setCpos] = useState([]);
   const navigate = useNavigate();
   const user = useSelector(selectUser);
 
@@ -108,6 +110,29 @@ const AddEvent = () => {
       callApi('GET', `/events/templates`, null, onSuccess, onError);
     };
 
+    const fetchCpos = async () => {
+      const onSuccess = (response) => {
+        setLoading(false);
+        setCpos(response.data);
+      };
+      const onError = () => {
+        setLoading(false);
+        toast.error('Failed to fetch CPOs', {
+          description: 'Error',
+        });
+      };
+
+      setLoading(true);
+      callApi(
+        'GET',
+        `/events/cpos?territory_id=${territory}`,
+        null,
+        onSuccess,
+        onError,
+      );
+    };
+
+    fetchCpos();
     fetchEventTemplates();
   }, [territory]);
 
@@ -139,6 +164,8 @@ const AddEvent = () => {
       rsm_id: user.manager.id,
       event_type_id: eventTemId,
       company_id: user.company_id,
+      cpo_name_id: cpoId,
+      copId: cpoId,
     };
 
     const onCreatedSuccess = () => {
@@ -182,7 +209,7 @@ const AddEvent = () => {
             '/events/create',
             mergedData,
             onCreatedSuccess,
-            onCreatedError
+            onCreatedError,
           );
         },
         () => {
@@ -190,7 +217,7 @@ const AddEvent = () => {
           toast.error('Failed to add event checklist', {
             description: 'Error',
           });
-        }
+        },
       );
     };
 
@@ -226,6 +253,12 @@ const AddEvent = () => {
 
   const eventTemplatesData =
     eventTemplates.map((item) => ({
+      label: item.name,
+      value: item.id,
+    })) || [];
+
+  const cposData =
+    cpos.map((item) => ({
       label: item.name,
       value: item.id,
     })) || [];
@@ -326,8 +359,8 @@ const AddEvent = () => {
                     onClick={() =>
                       setSelectedCrops(
                         selectedCrops.filter(
-                          (crop) => crop.value !== item.value
-                        )
+                          (crop) => crop.value !== item.value,
+                        ),
                       )
                     }
                   />
@@ -341,7 +374,7 @@ const AddEvent = () => {
               onValueChange={(value) => {
                 if (!selectedProducts.find((item) => item.value === value)) {
                   const product = productsData.find(
-                    (item) => item.value === value
+                    (item) => item.value === value,
                   );
                   setSelectedProducts([...selectedProducts, product]);
                 }
@@ -370,8 +403,8 @@ const AddEvent = () => {
                     onClick={() =>
                       setSelectedProducts(
                         selectedProducts.filter(
-                          (product) => product.value !== item.value
-                        )
+                          (product) => product.value !== item.value,
+                        ),
                       )
                     }
                   />
@@ -380,14 +413,26 @@ const AddEvent = () => {
             </div>
           </div>
           <div>
-            <Label htmlFor="cpoName">CPO Name</Label>
-            <Input
-              id="cpoName"
-              value={cpoName}
-              onChange={(e) => setCpoName(e.target.value)}
-              placeholder="Enter the CPO name"
-              required
-            />
+            <Label htmlFor="cpoId">CPO</Label>
+            <Select
+              value={cpoId}
+              onValueChange={(value) => {
+                const cpo = cposData.find((item) => item.value === value);
+                setCpoName(cpo?.label || '');
+                setCpoId(cpo?.value || '');
+              }}
+            >
+              <SelectTrigger className="w-full mt-1">
+                <SelectValue placeholder="Select the CPO" />
+              </SelectTrigger>
+              <SelectContent>
+                {cposData.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="dateBegin">Date Begin</Label>

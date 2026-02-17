@@ -37,7 +37,6 @@ const AddRMEvent = () => {
   const [selectedCrops, setSelectedCrops] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState([]);
-  const [cpoName, setCpoName] = useState('');
   const [eventName, setEventName] = useState('');
   const [eventTemId, setEventTemId] = useState('');
   const [eventTemplates, setEventTemplates] = useState([]);
@@ -45,6 +44,9 @@ const AddRMEvent = () => {
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [templateCategoryId, setTemplateCategoryId] = useState('');
   const [rating, setRating] = useState(1);
+  const [cpoName, setCpoName] = useState('');
+  const [cpoId, setCpoId] = useState(null);
+  const [cpos, setCpos] = useState([]);
 
   useEffect(() => {
     if (!userRegion) return;
@@ -97,8 +99,32 @@ const AddRMEvent = () => {
         () =>
           toast.error('Error fetching customers', {
             description: 'Please try again',
-          })
+          }),
       );
+
+      const fetchCpos = async () => {
+        const onSuccess = (response) => {
+          setLoading(false);
+          setCpos(response.data);
+        };
+        const onError = () => {
+          setLoading(false);
+          toast.error('Failed to fetch CPOs', {
+            description: 'Error',
+          });
+        };
+
+        setLoading(true);
+        callApi(
+          'GET',
+          `/events/cpos?territory_id=${territory}`,
+          null,
+          onSuccess,
+          onError,
+        );
+      };
+
+      fetchCpos();
     }
   }, [territory]);
 
@@ -131,6 +157,8 @@ const AddRMEvent = () => {
       event_temp_type_id: string;
       id?: number;
       event_stage_id?: number;
+      cpo_name_id: number;
+      copId: number;
     } = {
       name: eventName,
       crop_id: selectedCrops.map((item) => item.value),
@@ -146,6 +174,8 @@ const AddRMEvent = () => {
       company_id: user.company_id,
       dealer_ids: selectedCustomers.map((item) => item.value),
       event_temp_type_id: templateCategoryId,
+      cpo_name_id: cpoId,
+      copId: cpoId,
     };
 
     const onCreatedSuccess = () => {
@@ -175,7 +205,7 @@ const AddRMEvent = () => {
             '/events/create',
             data,
             onCreatedSuccess,
-            onCreatedError
+            onCreatedError,
           );
         },
         () => {
@@ -183,7 +213,7 @@ const AddRMEvent = () => {
           toast.error('Failed to add event checklist', {
             description: 'Error',
           });
-        }
+        },
       );
     };
     const onError = (error) => {
@@ -234,6 +264,12 @@ const AddRMEvent = () => {
         label: item.name,
         value: item.id,
       })) || [];
+
+  const cposData =
+    cpos.map((item) => ({
+      label: item.name,
+      value: item.id,
+    })) || [];
 
   const handleMultiSelect = (setState, currentState, value) => {
     const selected = currentState.find((item) => item.value === value);
@@ -308,7 +344,7 @@ const AddRMEvent = () => {
                   handleMultiSelect(
                     setSelectedCustomers,
                     selectedCustomers,
-                    value
+                    value,
                   )
                 }
               >
@@ -322,7 +358,7 @@ const AddRMEvent = () => {
                         <input
                           type="checkbox"
                           checked={selectedCustomers.some(
-                            (c) => c.value === item.value
+                            (c) => c.value === item.value,
                           )}
                           readOnly
                           className="mr-2"
@@ -402,7 +438,7 @@ const AddRMEvent = () => {
                         <input
                           type="checkbox"
                           checked={selectedCrops.some(
-                            (c) => c.value === item.value
+                            (c) => c.value === item.value,
                           )}
                           readOnly
                           className="mr-2"
@@ -433,7 +469,7 @@ const AddRMEvent = () => {
                   handleMultiSelect(
                     setSelectedProducts,
                     selectedProducts,
-                    value
+                    value,
                   )
                 }
               >
@@ -447,7 +483,7 @@ const AddRMEvent = () => {
                         <input
                           type="checkbox"
                           checked={selectedProducts.some(
-                            (p) => p.value === item.value
+                            (p) => p.value === item.value,
                           )}
                           readOnly
                           className="mr-2"
@@ -471,16 +507,28 @@ const AddRMEvent = () => {
             </div>
 
             <div>
-              <Label htmlFor="cpoName" className="text-sm font-medium">
-                CPO Name
+              <Label htmlFor="cpoId" className="text-sm font-medium">
+                CPO
               </Label>
-              <Input
-                id="cpoName"
-                placeholder="Enter the CPO name"
-                value={cpoName}
-                onChange={(e) => setCpoName(e.target.value)}
-                className="mt-1 w-full"
-              />
+              <Select
+                value={cpoId}
+                onValueChange={(value) => {
+                  const cpo = cposData.find((item) => item.value === value);
+                  setCpoName(cpo?.label || '');
+                  setCpoId(cpo?.value || '');
+                }}
+              >
+                <SelectTrigger className="w-full mt-1">
+                  <SelectValue placeholder="Select the CPO" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cposData.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label className="text-sm font-medium">
