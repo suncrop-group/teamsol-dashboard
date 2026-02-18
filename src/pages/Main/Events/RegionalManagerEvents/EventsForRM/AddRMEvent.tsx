@@ -508,7 +508,7 @@ const AddRMEvent = () => {
 
             <div>
               <Label htmlFor="cpoId" className="text-sm font-medium">
-                CPO
+                CPO for Allowance
               </Label>
               <Select
                 value={cpoId}

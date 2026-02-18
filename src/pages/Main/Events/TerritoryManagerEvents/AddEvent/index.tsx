@@ -142,7 +142,7 @@ const AddEvent = () => {
       eventName === '' ||
       selectedCrops.length === 0 ||
       selectedProducts.length === 0 ||
-      cpoName === '' ||
+      // cpoName === '' ||
       eventTemId === ''
     ) {
       toast.error('Please fill all the fields', {
@@ -165,7 +165,7 @@ const AddEvent = () => {
       event_type_id: eventTemId,
       company_id: user.company_id,
       cpo_name_id: cpoId,
-      copId: cpoId,
+      copId: cpoId || null,
     };
 
     const onCreatedSuccess = () => {
@@ -413,7 +413,7 @@ const AddEvent = () => {
             </div>
           </div>
           <div>
-            <Label htmlFor="cpoId">CPO</Label>
+            <Label htmlFor="cpoId">CPO for Allowance</Label>
             <Select
               value={cpoId}
               onValueChange={(value) => {
