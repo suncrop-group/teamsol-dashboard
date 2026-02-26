@@ -36,6 +36,8 @@ import {
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { selectUser } from '@/redux/slices/AuthSlice';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 
 interface Activity {
   id: number;
@@ -71,7 +73,8 @@ const ActivityCard = ({ item }: { item: Activity }) => {
             <div className="flex items-center gap-2 mt-1">
               <Calendar className="h-4 w-4 text-gray-500" />
               <span className="text-sm text-gray-600">
-                {dayjs(item.date).format('DD/MM/YYYY')} - {dayjs(item.date).format('dddd')}
+                {dayjs(item.date).format('DD/MM/YYYY')} -{' '}
+                {dayjs(item.date).format('dddd')}
               </span>
             </div>
           </div>
@@ -95,7 +98,9 @@ const ActivityCard = ({ item }: { item: Activity }) => {
             <Gauge className="h-4 w-4 text-blue-600" />
             <div>
               <p className="text-xs text-gray-500">Meter</p>
-              <p className="font-semibold text-gray-900">{item.closing_meter}</p>
+              <p className="font-semibold text-gray-900">
+                {item.closing_meter}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -165,7 +170,11 @@ const DailyActivity: React.FC = () => {
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const [showGrouping, setShowGrouping] = useState(false);
+
   const user = useSelector(selectUser);
 
   const [groupBy, setGroupBy] = useState<GroupingOptions>({
@@ -198,7 +207,7 @@ const DailyActivity: React.FC = () => {
       `/daily-activities/employee/${user?.id || 200}`,
       null,
       onSuccess,
-      onError
+      onError,
     );
   };
 
@@ -224,12 +233,22 @@ const DailyActivity: React.FC = () => {
     });
   };
 
-  // Filter activities based on search
-  const searchFilteredActivities = filteredActivities.filter((item) =>
-    `${item?.id} ${item?.area_visited} ${item?.closing_meter} ${item?.km_traveled}`
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase())
-  );
+  // Filter activities based on search and date
+  const searchFilteredActivities = filteredActivities.filter((item) => {
+    const matchesSearch =
+      `${item?.id} ${item?.area_visited} ${item?.closing_meter} ${item?.km_traveled}`
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+
+    const matchesDate =
+      !(selectedDateRange?.from && selectedDateRange?.to) ||
+      (dayjs(item.date).isAfter(
+        dayjs(selectedDateRange.from).subtract(1, 'day'),
+      ) &&
+        dayjs(item.date).isBefore(dayjs(selectedDateRange.to).add(1, 'day')));
+
+    return matchesSearch && matchesDate;
+  });
 
   // Create section title for multiple grouping criteria
   const createSectionTitle = (activity: Activity) => {
@@ -261,7 +280,7 @@ const DailyActivity: React.FC = () => {
           acc[sectionTitle].push(activity);
           return acc;
         },
-        {}
+        {},
       );
 
       return Object.keys(grouped).map((key) => ({
@@ -304,7 +323,9 @@ const DailyActivity: React.FC = () => {
         <Card className="shadow-lg border-0">
           <CardHeader className="bg-white border-b">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <CardTitle className="text-2xl font-bold">Daily Activities</CardTitle>
+              <CardTitle className="text-2xl font-bold">
+                Daily Activities
+              </CardTitle>
               <div className="flex items-center gap-2">
                 {activities.length > 0 && (
                   <Dialog open={showGrouping} onOpenChange={setShowGrouping}>
@@ -372,8 +393,8 @@ const DailyActivity: React.FC = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search by ID, area, meter, or km..."
@@ -382,6 +403,10 @@ const DailyActivity: React.FC = () => {
                   className="pl-10"
                 />
               </div>
+              <DateFilter
+                selectedRange={selectedDateRange}
+                onSelect={setSelectedDateRange}
+              />
             </div>
 
             {/* Active Filters & Grouping Summary */}
@@ -415,24 +440,37 @@ const DailyActivity: React.FC = () => {
             ) : (
               <div className="space-y-6">
                 {groupedActivities.map((group) => (
-                  <div key={group.title || 'all-activities'} className="space-y-4">
+                  <div
+                    key={group.title || 'all-activities'}
+                    className="space-y-4"
+                  >
                     {group.title && (
                       <h2 className="text-xl font-semibold text-gray-700 border-b pb-2">
                         {group.title}
                       </h2>
                     )}
-                    
+
                     {/* Desktop Table View */}
                     <div className="hidden md:block overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-gray-50 hover:bg-gray-50">
                             <TableHead className="font-semibold">ID</TableHead>
-                            <TableHead className="font-semibold">Date</TableHead>
-                            <TableHead className="font-semibold">Area Visited</TableHead>
-                            <TableHead className="font-semibold">Closing Meter</TableHead>
-                            <TableHead className="font-semibold">KM Traveled</TableHead>
-                            <TableHead className="font-semibold">Status</TableHead>
+                            <TableHead className="font-semibold">
+                              Date
+                            </TableHead>
+                            <TableHead className="font-semibold">
+                              Area Visited
+                            </TableHead>
+                            <TableHead className="font-semibold">
+                              Closing Meter
+                            </TableHead>
+                            <TableHead className="font-semibold">
+                              KM Traveled
+                            </TableHead>
+                            <TableHead className="font-semibold">
+                              Status
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>

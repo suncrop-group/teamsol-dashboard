@@ -30,6 +30,8 @@ import {
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import { priceFormatter } from '@/utils';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 
 const statusStyles = {
   sent: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -222,6 +224,9 @@ const Sales = () => {
   const [salesOrders, setSalesOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
@@ -253,15 +258,26 @@ const Sales = () => {
     // eslint-disable-next-line
   }, []);
 
-  const filteredSalesOrders = salesOrders.filter(
-    (item) =>
+  const filteredSalesOrders = salesOrders.filter((item) => {
+    const matchesSearch =
       item?.partner?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item?.territory?.name
         ?.toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
       item?.order_id?.toString().includes(searchQuery) ||
-      item?.order_sequence?.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+      item?.order_sequence?.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesDate =
+      !(selectedDateRange?.from && selectedDateRange?.to) ||
+      (dayjs(item?.createdAt).isAfter(
+        dayjs(selectedDateRange.from).subtract(1, 'day'),
+      ) &&
+        dayjs(item?.createdAt).isBefore(
+          dayjs(selectedDateRange.to).add(1, 'day'),
+        ));
+
+    return matchesSearch && matchesDate;
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4">
@@ -281,8 +297,8 @@ const Sales = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search by partner, territory, order ID, or sequence..."
@@ -291,6 +307,10 @@ const Sales = () => {
                   className="pl-10"
                 />
               </div>
+              <DateFilter
+                selectedRange={selectedDateRange}
+                onSelect={setSelectedDateRange}
+              />
             </div>
 
             {loading ? (

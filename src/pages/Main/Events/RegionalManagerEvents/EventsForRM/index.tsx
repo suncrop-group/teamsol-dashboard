@@ -12,6 +12,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import {
@@ -26,11 +34,15 @@ import {
   Image as ImageIcon,
   CheckCircle2,
   XCircle,
+  Hash,
+  Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import { callApi } from '@/api';
 import { resetProducts } from '@/redux/slices/OrderCreationSlice';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 
 const statusStyles = {
   sent: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -78,7 +90,7 @@ const EventsCard = ({ item, toggleEventImages, setToggleEventImages }) => {
   return (
     <>
       <Card
-        className="hover:shadow-lg transition-all duration-200 cursor-pointer border-l-4 border-l-blue-500"
+        className="hover:shadow-lg transition-all duration-200 cursor-pointer border-l-4 border-l-blue-500 md:hidden"
         onClick={() => navigate(`/event-details-rm/${item.id}`)}
       >
         <CardHeader className="pb-3">
@@ -248,6 +260,194 @@ const EventsCard = ({ item, toggleEventImages, setToggleEventImages }) => {
   );
 };
 
+const EventsTableRow = ({
+  item,
+  toggleEventImages,
+  setToggleEventImages,
+  setSelectedImage,
+}) => {
+  const navigate = useNavigate();
+
+  const toggleImages = (e) => {
+    e.stopPropagation();
+    setToggleEventImages((prev) => {
+      if (prev.includes(item.id)) {
+        return prev.filter((id) => id !== item.id);
+      } else {
+        return [...prev, item.id];
+      }
+    });
+  };
+
+  return (
+    <>
+      <TableRow
+        className="hover:bg-gray-50 transition-colors cursor-pointer"
+        onClick={() => navigate(`/event-details-rm/${item.id}`)}
+      >
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <Hash className="h-4 w-4 text-gray-400" />
+            <div>
+              <div className="font-medium">#{item?.id}</div>
+              <div
+                className="text-xs text-gray-500 max-w-[150px] truncate"
+                title={item?.name}
+              >
+                {item?.name}
+              </div>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-start gap-2">
+            <MapPin className="h-4 w-4 text-blue-600 mt-0.5" />
+            <div>
+              <div className="font-medium">{item?.region?.name}</div>
+              <div className="text-xs text-gray-500">
+                {item?.territory?.name}
+              </div>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="space-y-1 text-sm">
+            {item?.demo_products?.length > 0 && (
+              <div className="flex items-start gap-1">
+                <span className="font-medium text-xs text-gray-500">
+                  Products:
+                </span>
+                <span
+                  className="text-xs truncate max-w-[150px]"
+                  title={item?.demo_products?.map((p) => p.name).join(', ')}
+                >
+                  {item?.demo_products?.map((p) => p.name).join(', ')}
+                </span>
+              </div>
+            )}
+            {item?.crops?.length > 0 && (
+              <div className="flex items-start gap-1">
+                <span className="font-medium text-xs text-gray-500">Crop:</span>
+                <span
+                  className="text-xs truncate max-w-[150px]"
+                  title={item?.crops?.map((c) => c.name).join(', ')}
+                >
+                  {item?.crops?.map((c) => c.name).join(', ')}
+                </span>
+              </div>
+            )}
+            <div className="flex items-start gap-1">
+              <span className="font-medium text-xs text-gray-500">Type:</span>
+              <span className="text-xs">{item?.event_type?.name}</span>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Calendar className="h-4 w-4" />
+            <div>
+              <div>{item?.date_begin}</div>
+              <div className="text-xs text-gray-400">to {item?.date_end}</div>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex flex-col gap-1 items-start">
+            <Badge
+              className={`${
+                statusStyles[item?.event_stage?.name.toLowerCase()]
+              } border-0 text-[10px] capitalize`}
+            >
+              {item?.event_stage?.name}
+            </Badge>
+            <Badge
+              className={`${
+                statusStyles[item?.verified ? 'sent' : 'cancelled']
+              } border-0 text-[10px] flex items-center gap-1`}
+            >
+              {item?.verified ? (
+                <>
+                  <CheckCircle2 className="h-3 w-3" />
+                  Verified
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-3 w-3" />
+                  Unverified
+                </>
+              )}
+            </Badge>
+            {item?.rsmAttended && (
+              <Badge
+                className={`${statusStyles.sent} border-0 text-[10px] flex items-center gap-1`}
+              >
+                <Users className="h-3 w-3" />
+                Attended
+              </Badge>
+            )}
+          </div>
+        </TableCell>
+        <TableCell>
+          {item?.images && item.images.length > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleImages}
+              className="text-blue-600 hover:text-blue-700 p-0 h-auto"
+            >
+              <ImageIcon className="h-4 w-4 mr-1" />
+              {toggleEventImages.includes(item.id) ? 'Hide' : 'Show'} (
+              {item.images.length})
+            </Button>
+          ) : (
+            <span className="text-xs text-gray-400">No images</span>
+          )}
+        </TableCell>
+      </TableRow>
+
+      {/* Image Gallery Row (conditionally rendered) */}
+      {item?.images &&
+        item.images.length > 0 &&
+        toggleEventImages.includes(item.id) && (
+          <TableRow className="bg-gray-50 hover:bg-gray-50">
+            <TableCell colSpan={6} className="p-4 border-b">
+              <div className="flex flex-wrap gap-2">
+                {item.images.map((imageUrl, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={imageUrl}
+                      alt={`Event image ${index + 1}`}
+                      className="w-20 h-20 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity border bg-white"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedImage(imageUrl);
+                      }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                    <div
+                      className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 rounded-md flex items-center justify-center cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedImage(imageUrl);
+                      }}
+                    >
+                      <Eye
+                        className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        size={16}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </TableCell>
+          </TableRow>
+        )}
+    </>
+  );
+};
+
 const EventsForRM = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -255,7 +455,11 @@ const EventsForRM = () => {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [selectedFilters, setSelectedFilters] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const [toggleEventImages, setToggleEventImages] = useState([]);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
@@ -264,7 +468,7 @@ const EventsForRM = () => {
     const onSuccess = (response) => {
       setLoading(false);
       response.data.sort(
-        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
+        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
       );
       setEvents(response.data);
     };
@@ -330,8 +534,8 @@ const EventsForRM = () => {
     });
   };
 
-  const filteredEvents = events.filter(
-    (item) =>
+  const isFilterMatch = (item) => {
+    const matchesSearch =
       item?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item?.region?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item?.territory?.name
@@ -340,8 +544,21 @@ const EventsForRM = () => {
       item?.event_type?.name
         ?.toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
-      item?.id.toString().includes(searchQuery)
-  );
+      item?.id.toString().includes(searchQuery);
+
+    const matchesDate =
+      !(selectedDateRange?.from && selectedDateRange?.to) ||
+      (dayjs(item.date_begin).isAfter(
+        dayjs(selectedDateRange.from).subtract(1, 'day'),
+      ) &&
+        dayjs(item.date_begin).isBefore(
+          dayjs(selectedDateRange.to).add(1, 'day'),
+        ));
+
+    return matchesSearch && matchesDate;
+  };
+
+  const filteredEvents = events.filter(isFilterMatch);
 
   let groupedEvents = [];
   if (filterBy.territory && filterBy.stages) {
@@ -360,39 +577,13 @@ const EventsForRM = () => {
       ? groupedEvents.flatMap((territorySection) =>
           territorySection.data.map((stageSection) => ({
             title: `${territorySection.title} - ${stageSection.title}`,
-            data: stageSection.data.filter(
-              (item) =>
-                item?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                item?.region?.name
-                  ?.toLowerCase()
-                  .includes(searchQuery.toLowerCase()) ||
-                item?.territory?.name
-                  ?.toLowerCase()
-                  .includes(searchQuery.toLowerCase()) ||
-                item?.event_type?.name
-                  ?.toLowerCase()
-                  .includes(searchQuery.toLowerCase()) ||
-                item?.id.toString().includes(searchQuery)
-            ),
-          }))
+            data: stageSection.data.filter(isFilterMatch),
+          })),
         )
       : groupedEvents
           .map((section) => ({
             title: section.title,
-            data: section.data.filter(
-              (item) =>
-                item?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                item?.region?.name
-                  ?.toLowerCase()
-                  .includes(searchQuery.toLowerCase()) ||
-                item?.territory?.name
-                  ?.toLowerCase()
-                  .includes(searchQuery.toLowerCase()) ||
-                item?.event_type?.name
-                  ?.toLowerCase()
-                  .includes(searchQuery.toLowerCase()) ||
-                item?.id.toString().includes(searchQuery)
-            ),
+            data: section.data.filter(isFilterMatch),
           }))
           .filter((item) => item.data.length > 0);
 
@@ -441,38 +632,50 @@ const EventsForRM = () => {
                         Filter
                       </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="max-w-md">
                       <DialogHeader>
                         <DialogTitle>Filter Events</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id="territory"
-                            checked={selectedFilters.includes('territory')}
-                            onCheckedChange={(checked) =>
-                              setSelectedFilters((prev) =>
-                                checked
-                                  ? [...prev, 'territory']
-                                  : prev.filter((f) => f !== 'territory')
-                              )
-                            }
-                          />
-                          <Label htmlFor="territory">Group by Territory</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id="stages"
-                            checked={selectedFilters.includes('stages')}
-                            onCheckedChange={(checked) =>
-                              setSelectedFilters((prev) =>
-                                checked
-                                  ? [...prev, 'stages']
-                                  : prev.filter((f) => f !== 'stages')
-                              )
-                            }
-                          />
-                          <Label htmlFor="stages">Group by Event Stages</Label>
+                        <DateFilter
+                          selectedRange={selectedDateRange}
+                          onSelect={setSelectedDateRange}
+                          triggerMode="input"
+                          className="w-full"
+                        />
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="territory"
+                              checked={selectedFilters.includes('territory')}
+                              onCheckedChange={(checked) =>
+                                setSelectedFilters((prev) =>
+                                  checked
+                                    ? [...prev, 'territory']
+                                    : prev.filter((f) => f !== 'territory'),
+                                )
+                              }
+                            />
+                            <Label htmlFor="territory">
+                              Group by Territory
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="stages"
+                              checked={selectedFilters.includes('stages')}
+                              onCheckedChange={(checked) =>
+                                setSelectedFilters((prev) =>
+                                  checked
+                                    ? [...prev, 'stages']
+                                    : prev.filter((f) => f !== 'stages'),
+                                )
+                              }
+                            />
+                            <Label htmlFor="stages">
+                              Group by Event Stages
+                            </Label>
+                          </div>
                         </div>
                         <Button
                           onClick={() => {
@@ -506,10 +709,50 @@ const EventsForRM = () => {
                         {section.title}
                       </h2>
                     )}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto bg-white rounded-lg shadow border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gray-50 hover:bg-gray-50">
+                            <TableHead className="font-semibold">
+                              ID / Name
+                            </TableHead>
+                            <TableHead className="font-semibold">
+                              Location
+                            </TableHead>
+                            <TableHead className="font-semibold">
+                              Details
+                            </TableHead>
+                            <TableHead className="font-semibold">
+                              Date
+                            </TableHead>
+                            <TableHead className="font-semibold">
+                              Status
+                            </TableHead>
+                            <TableHead className="font-semibold">
+                              Images
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {section.data.map((item, idx) => (
+                            <EventsTableRow
+                              key={`desktop-${item.id}-${idx}`}
+                              item={item}
+                              toggleEventImages={toggleEventImages}
+                              setToggleEventImages={setToggleEventImages}
+                              setSelectedImage={setSelectedImage}
+                            />
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="grid grid-cols-1 md:hidden gap-4 mt-4 md:mt-0">
                       {section.data.map((item, idx) => (
                         <EventsCard
-                          key={`${item.id}-${idx}`}
+                          key={`mobile-${item.id}-${idx}`}
                           item={item}
                           toggleEventImages={toggleEventImages}
                           setToggleEventImages={setToggleEventImages}
@@ -519,7 +762,7 @@ const EventsForRM = () => {
                   </div>
                 ))}
                 {flattenedSections.every(
-                  (section) => section.data.length === 0
+                  (section) => section.data.length === 0,
                 ) && (
                   <div className="text-center py-12">
                     <Calendar className="h-16 w-16 text-gray-300 mx-auto mb-4" />
@@ -529,7 +772,8 @@ const EventsForRM = () => {
                         : 'No events found.'}
                     </p>
                     <p className="text-gray-400 text-sm mb-4">
-                      {!searchQuery && 'Create your first event to get started.'}
+                      {!searchQuery &&
+                        'Create your first event to get started.'}
                     </p>
                     <Button onClick={() => navigate('/add-rm-event')}>
                       <Plus className="h-4 w-4 mr-2" />
@@ -542,6 +786,24 @@ const EventsForRM = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Shared Image Modal for Desktop Table */}
+      {selectedImage && (
+        <Dialog
+          open={!!selectedImage}
+          onOpenChange={() => setSelectedImage(null)}
+        >
+          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+            <div className="relative">
+              <img
+                src={selectedImage}
+                alt="Event Image"
+                className="w-full h-auto max-h-[85vh] object-contain rounded-lg"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

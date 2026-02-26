@@ -34,6 +34,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 
 const statusStyles = {
   sent: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -69,7 +71,7 @@ const TollCard = ({
     name?: string;
     status?: string;
     odooStatus?: string;
-    date:string
+    date: string;
   };
   onConfirmDelete: (id: number) => void;
 }) => {
@@ -158,7 +160,7 @@ const TollRow = ({
     name?: string;
     status?: string;
     odooStatus?: string;
-    date:string
+    date: string;
   };
   onConfirmDelete: (id: number) => void;
 }) => {
@@ -191,7 +193,6 @@ const TollRow = ({
           <Calendar className="h-4 w-4" />
           <div>
             <div>{dayjs(item.date).format('DD/MM/YYYY')}</div>
-           
           </div>
         </div>
       </TableCell>
@@ -231,6 +232,9 @@ const Toll = () => {
   const [tolls, setTolls] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const [toDeleteId, setToDeleteId] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loadingDelete, setLoadingDelete] = useState(false);
@@ -256,11 +260,20 @@ const Toll = () => {
     fetchTolls();
   }, []);
 
-  const filteredTolls = tolls.filter(
-    (toll) =>
+  const filteredTolls = tolls.filter((toll) => {
+    const matchesSearch =
       toll.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      toll.id.toString().includes(searchQuery)
-  );
+      toll.id.toString().includes(searchQuery);
+
+    const matchesDate =
+      !(selectedDateRange?.from && selectedDateRange?.to) ||
+      (dayjs(toll.date).isAfter(
+        dayjs(selectedDateRange.from).subtract(1, 'day'),
+      ) &&
+        dayjs(toll.date).isBefore(dayjs(selectedDateRange.to).add(1, 'day')));
+
+    return matchesSearch && matchesDate;
+  });
 
   const onConfirmDelete = () => {
     if (toDeleteId === null) return;
@@ -296,7 +309,7 @@ const Toll = () => {
         () => {
           toast.error('Failed to cancel toll record. Please try again.');
           setLoadingDelete(false);
-        }
+        },
       );
     };
 
@@ -305,7 +318,7 @@ const Toll = () => {
       setToDeleteId(null);
       setLoadingDelete(false);
       toast.error(
-        error?.message || 'Failed to cancel toll record. Please try again.'
+        error?.message || 'Failed to cancel toll record. Please try again.',
       );
     };
 
@@ -319,9 +332,7 @@ const Toll = () => {
         <Card className="shadow-lg border-0">
           <CardHeader className="bg-white border-b">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <CardTitle className="text-2xl font-bold">
-                Toll Records
-              </CardTitle>
+              <CardTitle className="text-2xl font-bold">Toll Records</CardTitle>
               <Button onClick={() => navigate('/add-toll')} disabled={loading}>
                 <Plus className="h-4 w-4 mr-2" />
                 Add Toll
@@ -330,8 +341,8 @@ const Toll = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search by name or ID..."
@@ -340,6 +351,10 @@ const Toll = () => {
                   className="pl-10"
                 />
               </div>
+              <DateFilter
+                selectedRange={selectedDateRange}
+                onSelect={setSelectedDateRange}
+              />
             </div>
 
             {loading ? (

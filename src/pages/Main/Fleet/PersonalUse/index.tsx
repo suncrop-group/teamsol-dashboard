@@ -34,6 +34,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 
 const statusStyles = {
   sent: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -65,7 +67,7 @@ const PersonalUseCard = ({
     status?: string;
     odooStatus?: string;
     company_id?: number;
-    date:string;
+    date: string;
   };
   onConfirmDelete: (id: number) => void;
 }) => {
@@ -158,7 +160,7 @@ const PersonalUseRow = ({
     status?: string;
     odooStatus?: string;
     company_id?: number;
-    date:string
+    date: string;
   };
   onConfirmDelete: (id: number) => void;
 }) => {
@@ -197,7 +199,6 @@ const PersonalUseRow = ({
           <Calendar className="h-4 w-4" />
           <div>
             <div>{dayjs(item.date).format('DD/MM/YYYY')}</div>
-          
           </div>
         </div>
       </TableCell>
@@ -238,6 +239,9 @@ const PersonalUse = () => {
   const [personalUses, setPersonalUses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const [toDeleteId, setToDeleteId] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loadingDelete, setLoadingDelete] = useState(false);
@@ -245,7 +249,7 @@ const PersonalUse = () => {
   const fetchPersonalUses = async () => {
     const onSuccess = (response) => {
       const sortedData = response.data.sort(
-        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
+        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
       );
       setPersonalUses(sortedData);
       setLoading(false);
@@ -264,11 +268,21 @@ const PersonalUse = () => {
     fetchPersonalUses();
   }, []);
 
-  const filteredPersonalUses = personalUses.filter((item) =>
-    `${item.id} ${item.personal_travel} ${item.personal_travel_amount} ${item.name}`
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase())
-  );
+  const filteredPersonalUses = personalUses.filter((item) => {
+    const matchesSearch =
+      `${item.id} ${item.personal_travel} ${item.personal_travel_amount} ${item.name}`
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+
+    const matchesDate =
+      !(selectedDateRange?.from && selectedDateRange?.to) ||
+      (dayjs(item.date).isAfter(
+        dayjs(selectedDateRange.from).subtract(1, 'day'),
+      ) &&
+        dayjs(item.date).isBefore(dayjs(selectedDateRange.to).add(1, 'day')));
+
+    return matchesSearch && matchesDate;
+  });
 
   const onConfirmDelete = () => {
     if (toDeleteId === null) return;
@@ -304,10 +318,10 @@ const PersonalUse = () => {
         },
         () => {
           toast.error(
-            'Failed to cancel personal use record. Please try again.'
+            'Failed to cancel personal use record. Please try again.',
           );
           setLoadingDelete(false);
-        }
+        },
       );
     };
 
@@ -317,7 +331,7 @@ const PersonalUse = () => {
       setLoadingDelete(false);
       toast.error(
         error?.message ||
-          'Failed to cancel personal use record. Please try again.'
+          'Failed to cancel personal use record. Please try again.',
       );
     };
 
@@ -342,8 +356,8 @@ const PersonalUse = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search by ID, distance, amount, or name..."
@@ -352,6 +366,10 @@ const PersonalUse = () => {
                   className="pl-10"
                 />
               </div>
+              <DateFilter
+                selectedRange={selectedDateRange}
+                onSelect={setSelectedDateRange}
+              />
             </div>
 
             {loading ? (

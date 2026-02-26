@@ -27,6 +27,8 @@ import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import { callApi } from '@/api';
 import { priceFormatter } from '@/utils';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 
 const statusStyles = {
   sent: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -56,11 +58,15 @@ const CreditLimitExtensionCard = ({ item }) => {
             </div>
             <div className="flex items-center gap-2 ml-6">
               <User className="h-3 w-3 text-gray-400" />
-              <span className="text-sm text-gray-600">{item?.customer?.name}</span>
+              <span className="text-sm text-gray-600">
+                {item?.customer?.name}
+              </span>
             </div>
             <div className="flex items-center gap-2 ml-6">
               <CreditCard className="h-3 w-3 text-gray-400" />
-              <span className="text-sm text-gray-600">{item?.policy?.code}</span>
+              <span className="text-sm text-gray-600">
+                {item?.policy?.code}
+              </span>
             </div>
           </div>
           <div className="flex flex-col gap-1 items-end">
@@ -85,7 +91,9 @@ const CreditLimitExtensionCard = ({ item }) => {
         <div className="space-y-1 text-sm text-gray-600">
           <div className="flex items-center gap-2">
             <Hash className="h-4 w-4" />
-            <span>#{item?.id} - {item?.sequence}</span>
+            <span>
+              #{item?.id} - {item?.sequence}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
@@ -183,6 +191,9 @@ const CreditLimitExtension = () => {
   const [creditLimitsExtension, setCreditLimitsExtension] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -190,7 +201,7 @@ const CreditLimitExtension = () => {
       const onSuccess = (response) => {
         setLoading(false);
         response.data.sort(
-          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
+          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
         );
         setCreditLimitsExtension(response.data);
       };
@@ -205,12 +216,23 @@ const CreditLimitExtension = () => {
     fetchCreditLimitsExtension();
   }, []);
 
-  const filteredCreditLimits = creditLimitsExtension.filter(
-    (item) =>
+  const filteredCreditLimits = creditLimitsExtension.filter((item) => {
+    const matchesSearch =
       item?.customer?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item?.policy?.code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item?.id.toString().includes(searchQuery)
-  );
+      item?.id.toString().includes(searchQuery);
+
+    const matchesDate =
+      !(selectedDateRange?.from && selectedDateRange?.to) ||
+      (dayjs(item?.createdAt).isAfter(
+        dayjs(selectedDateRange.from).subtract(1, 'day'),
+      ) &&
+        dayjs(item?.createdAt).isBefore(
+          dayjs(selectedDateRange.to).add(1, 'day'),
+        ));
+
+    return matchesSearch && matchesDate;
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4">
@@ -233,8 +255,8 @@ const CreditLimitExtension = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search by customer, policy code, or ID..."
@@ -243,6 +265,10 @@ const CreditLimitExtension = () => {
                   className="pl-10"
                 />
               </div>
+              <DateFilter
+                selectedRange={selectedDateRange}
+                onSelect={setSelectedDateRange}
+              />
             </div>
 
             {loading ? (
@@ -270,7 +296,9 @@ const CreditLimitExtension = () => {
                     <TableHeader>
                       <TableRow className="bg-gray-50 hover:bg-gray-50">
                         <TableHead className="font-semibold">ID</TableHead>
-                        <TableHead className="font-semibold">Company & Customer</TableHead>
+                        <TableHead className="font-semibold">
+                          Company & Customer
+                        </TableHead>
                         <TableHead className="font-semibold">Policy</TableHead>
                         <TableHead className="font-semibold">Amount</TableHead>
                         <TableHead className="font-semibold">Date</TableHead>
@@ -283,7 +311,7 @@ const CreditLimitExtension = () => {
                       ))}
                     </TableBody>
                   </Table>
-              </div>
+                </div>
 
                 {/* Mobile Card View */}
                 <div className="md:hidden space-y-4">

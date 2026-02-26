@@ -36,6 +36,8 @@ import {
 import { priceFormatter } from '@/utils';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 
 const stylesByStatus = {
   sent: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -63,7 +65,7 @@ const ExpenseCard = ({
     description?: string;
     amount?: number;
     createdAt?: string;
-    date:string;
+    date: string;
     odooStatus?: string;
     status?: string;
     urls?: string[];
@@ -86,10 +88,14 @@ const ExpenseCard = ({
             </div>
           </div>
           <div className="flex flex-col gap-1 items-end">
-            <Badge className={`${stylesByStatus[item.status?.toLowerCase()]} border-0 text-xs capitalize`}>
+            <Badge
+              className={`${stylesByStatus[item.status?.toLowerCase()]} border-0 text-xs capitalize`}
+            >
               {item.status}
             </Badge>
-            <Badge className={`${stylesByStatus[item.odooStatus?.toLowerCase()]} border-0 text-xs capitalize`}>
+            <Badge
+              className={`${stylesByStatus[item.odooStatus?.toLowerCase()]} border-0 text-xs capitalize`}
+            >
               {item.odooStatus}
             </Badge>
           </div>
@@ -103,9 +109,7 @@ const ExpenseCard = ({
           </div>
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
-            <span>
-              {dayjs(item.date).format('DD/MM/YYYY')}
-            </span>
+            <span>{dayjs(item.date).format('DD/MM/YYYY')}</span>
           </div>
         </div>
 
@@ -161,7 +165,7 @@ const ExpenseRow = ({
     odooStatus?: string;
     status?: string;
     urls?: string[];
-    date:string
+    date: string;
   };
   cancelOrder: (id: string) => void;
   onViewImages: (urls: string[]) => void;
@@ -197,16 +201,19 @@ const ExpenseRow = ({
           <Calendar className="h-4 w-4" />
           <div>
             <div>{dayjs(item.date).format('DD/MM/YYYY')}</div>
-            
           </div>
         </div>
       </TableCell>
       <TableCell>
         <div className="flex flex-col gap-1">
-          <Badge className={`${stylesByStatus[item.status?.toLowerCase()]} border-0 w-fit capitalize`}>
+          <Badge
+            className={`${stylesByStatus[item.status?.toLowerCase()]} border-0 w-fit capitalize`}
+          >
             {item.status}
           </Badge>
-          <Badge className={`${stylesByStatus[item.odooStatus?.toLowerCase()]} border-0 w-fit capitalize`}>
+          <Badge
+            className={`${stylesByStatus[item.odooStatus?.toLowerCase()]} border-0 w-fit capitalize`}
+          >
             {item.odooStatus}
           </Badge>
         </div>
@@ -269,6 +276,9 @@ const Expenses = () => {
     }[]
   >([]);
   const [search, setSearch] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const user = useSelector(selectUser);
@@ -305,7 +315,7 @@ const Expenses = () => {
       () => {
         setLoading(false);
         toast.error('Error fetching expenses orders');
-      }
+      },
     );
   };
 
@@ -314,16 +324,30 @@ const Expenses = () => {
   }, []);
 
   useEffect(() => {
-    if (search === '') {
-      setFilteredData(expensesOrders);
-    } else {
-      setFilteredData(
-        expensesOrders.filter((item) =>
-          item.name.toLowerCase().includes(search.toLowerCase())
-        )
+    let filtered = expensesOrders;
+
+    if (search !== '') {
+      filtered = filtered.filter((item) =>
+        item.name.toLowerCase().includes(search.toLowerCase()),
       );
     }
-  }, [search, expensesOrders]);
+
+    if (selectedDateRange?.from || selectedDateRange?.to) {
+      filtered = filtered.filter((item) => {
+        return (
+          !(selectedDateRange?.from && selectedDateRange?.to) ||
+          (dayjs(item.date).isAfter(
+            dayjs(selectedDateRange.from).subtract(1, 'day'),
+          ) &&
+            dayjs(item.date).isBefore(
+              dayjs(selectedDateRange.to).add(1, 'day'),
+            ))
+        );
+      });
+    }
+
+    setFilteredData(filtered);
+  }, [search, selectedDateRange, expensesOrders]);
 
   const onConfirmCancel = () => {
     const onDBSuccess = () => {
@@ -364,12 +388,12 @@ const Expenses = () => {
             company_id: user.company.id,
           },
           onDBSuccess,
-          onDBError
+          onDBError,
         );
       } else {
         setRemoveLoading(false);
         toast.error(
-          response?.error || 'Something went wrong. Please try again.'
+          response?.error || 'Something went wrong. Please try again.',
         );
       }
     };
@@ -405,9 +429,7 @@ const Expenses = () => {
           <CardHeader className="bg-white border-b">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <CardTitle className="text-2xl font-bold">Expenses</CardTitle>
-              <Button
-                onClick={() => navigate('/expenses/add')}
-              >
+              <Button onClick={() => navigate('/expenses/add')}>
                 <Plus className="h-4 w-4 mr-2" />
                 Add Expense
               </Button>
@@ -415,8 +437,8 @@ const Expenses = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search expenses by name..."
@@ -425,6 +447,10 @@ const Expenses = () => {
                   className="pl-10"
                 />
               </div>
+              <DateFilter
+                selectedRange={selectedDateRange}
+                onSelect={setSelectedDateRange}
+              />
             </div>
 
             {loading ? (
@@ -435,7 +461,9 @@ const Expenses = () => {
               <div className="text-center py-12">
                 <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500 text-lg">
-                  {search ? 'No expenses found matching your search.' : 'No expenses found.'}
+                  {search
+                    ? 'No expenses found matching your search.'
+                    : 'No expenses found.'}
                 </p>
                 <p className="text-gray-400 text-sm mt-2">
                   {!search && 'Create your first expense to get started.'}
@@ -492,7 +520,8 @@ const Expenses = () => {
           <DialogHeader>
             <DialogTitle>Confirm Cancellation</DialogTitle>
             <DialogDescription>
-              Are you sure you want to cancel expense #{selected}? This action cannot be undone.
+              Are you sure you want to cancel expense #{selected}? This action
+              cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -547,7 +576,7 @@ const Expenses = () => {
                   size="sm"
                   onClick={() =>
                     setCurrentImageIndex((prev) =>
-                      prev > 0 ? prev - 1 : selectedImages.length - 1
+                      prev > 0 ? prev - 1 : selectedImages.length - 1,
                     )
                   }
                 >
@@ -558,7 +587,7 @@ const Expenses = () => {
                   size="sm"
                   onClick={() =>
                     setCurrentImageIndex((prev) =>
-                      prev < selectedImages.length - 1 ? prev + 1 : 0
+                      prev < selectedImages.length - 1 ? prev + 1 : 0,
                     )
                   }
                 >

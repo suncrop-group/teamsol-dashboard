@@ -34,6 +34,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 
 const statusStyles = {
   sent: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -66,7 +68,7 @@ const FuelCard = ({
     status?: string;
     odooStatus?: string;
     url?: string;
-    date:string
+    date: string;
   };
   onDeleteFuel: (id: number) => void;
   onViewImage: (url: string) => void;
@@ -79,9 +81,7 @@ const FuelCard = ({
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <FuelIcon className="h-4 w-4 text-blue-600" />
-              <h3 className="font-semibold text-base">
-                {item.liters} Liters
-              </h3>
+              <h3 className="font-semibold text-base">{item.liters} Liters</h3>
             </div>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs font-medium text-gray-500">PKR</span>
@@ -163,7 +163,7 @@ const FuelRow = ({
     status?: string;
     odooStatus?: string;
     url?: string;
-    date:string
+    date: string;
   };
   onDeleteFuel: (id: number) => void;
   onViewImage: (url: string) => void;
@@ -195,7 +195,6 @@ const FuelRow = ({
           <Calendar className="h-4 w-4" />
           <div>
             <div>{dayjs(item.date).format('DD/MM/YYYY')}</div>
-            
           </div>
         </div>
       </TableCell>
@@ -248,6 +247,9 @@ const Fuel = () => {
   const [loading, setLoading] = useState(true);
   const [fuelData, setFuelData] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const [toDeleteFuelId, setToDeleteFuelId] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loadingDelete, setLoadingDelete] = useState(false);
@@ -256,7 +258,7 @@ const Fuel = () => {
   const fetchFuelData = async () => {
     const onSuccess = (response) => {
       const sortedData = response.data.sort(
-        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
+        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
       );
       setFuelData(sortedData);
       setLoading(false);
@@ -274,11 +276,20 @@ const Fuel = () => {
     fetchFuelData();
   }, []);
 
-  const filteredFuelData = fuelData.filter((item) =>
-    `${item.id} ${item.liters} ${item.cost}`
+  const filteredFuelData = fuelData.filter((item) => {
+    const matchesSearch = `${item.id} ${item.liters} ${item.cost}`
       .toLowerCase()
-      .includes(searchQuery.toLowerCase())
-  );
+      .includes(searchQuery.toLowerCase());
+
+    const matchesDate =
+      !(selectedDateRange?.from && selectedDateRange?.to) ||
+      (dayjs(item.date).isAfter(
+        dayjs(selectedDateRange.from).subtract(1, 'day'),
+      ) &&
+        dayjs(item.date).isBefore(dayjs(selectedDateRange.to).add(1, 'day')));
+
+    return matchesSearch && matchesDate;
+  });
 
   const onDeleteFuel = (id) => {
     setToDeleteFuelId(id);
@@ -322,7 +333,7 @@ const Fuel = () => {
         () => {
           toast.error('Failed to cancel fuel record. Please try again.');
           setLoadingDelete(false);
-        }
+        },
       );
     };
 
@@ -331,7 +342,7 @@ const Fuel = () => {
       setToDeleteFuelId(null);
       setLoadingDelete(false);
       toast.error(
-        error?.message || 'Failed to cancel fuel record. Please try again.'
+        error?.message || 'Failed to cancel fuel record. Please try again.',
       );
     };
 
@@ -354,8 +365,8 @@ const Fuel = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search by ID, liters, or cost..."
@@ -364,6 +375,10 @@ const Fuel = () => {
                   className="pl-10"
                 />
               </div>
+              <DateFilter
+                selectedRange={selectedDateRange}
+                onSelect={setSelectedDateRange}
+              />
             </div>
 
             {loading ? (
@@ -468,7 +483,10 @@ const Fuel = () => {
 
       {/* Image View Dialog */}
       {selectedImage && (
-        <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
+        <Dialog
+          open={!!selectedImage}
+          onOpenChange={() => setSelectedImage(null)}
+        >
           <DialogContent className="max-w-4xl max-h-[90vh] p-2">
             <div className="relative">
               <img

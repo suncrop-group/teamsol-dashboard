@@ -35,6 +35,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 import { toast } from 'sonner';
 
 const statusStyles = {
@@ -73,7 +75,7 @@ const MaintenanceCard = ({
     odooStatus?: string;
     name?: string;
     url?: string;
-    date:string
+    date: string;
   };
   onDeleteMaintenance: (id: number) => void;
   onViewImage: (url: string) => void;
@@ -86,9 +88,7 @@ const MaintenanceCard = ({
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <Car className="h-4 w-4 text-blue-600" />
-              <h3 className="font-semibold text-base">
-                {item.vehicle.name}
-              </h3>
+              <h3 className="font-semibold text-base">{item.vehicle.name}</h3>
             </div>
             <p className="text-xs text-gray-500 ml-6">
               {item.vehicle.license_plate}
@@ -185,7 +185,7 @@ const MaintenanceRow = ({
     odooStatus?: string;
     name?: string;
     url?: string;
-    date:string
+    date: string;
   };
   onDeleteMaintenance: (id: number) => void;
   onViewImage: (url: string) => void;
@@ -230,7 +230,6 @@ const MaintenanceRow = ({
           <Calendar className="h-4 w-4" />
           <div>
             <div>{dayjs(item.date).format('DD/MM/YYYY')}</div>
-           
           </div>
         </div>
       </TableCell>
@@ -283,6 +282,9 @@ const Maintenance = () => {
   const [loading, setLoading] = useState(true);
   const [serviceData, setServiceData] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const [toDeleteId, setToDeleteId] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loadingDelete, setLoadingDelete] = useState(false);
@@ -291,7 +293,7 @@ const Maintenance = () => {
   const fetchServiceData = async () => {
     const onSuccess = (response) => {
       const sortedData = response.data.sort(
-        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
+        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
       );
       setServiceData(sortedData);
       setLoading(false);
@@ -307,7 +309,7 @@ const Maintenance = () => {
       '/fleet/services?category=service',
       null,
       onSuccess,
-      onError
+      onError,
     );
   };
 
@@ -315,11 +317,21 @@ const Maintenance = () => {
     fetchServiceData();
   }, []);
 
-  const filteredServiceData = serviceData.filter((item) =>
-    `${item?.id} ${item?.vehicle?.name} ${item?.vehicle?.license_plate} ${item?.cost} ${item?.name}`
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase())
-  );
+  const filteredServiceData = serviceData.filter((item) => {
+    const matchesSearch =
+      `${item?.id} ${item?.vehicle?.name} ${item?.vehicle?.license_plate} ${item?.cost} ${item?.name}`
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+
+    const matchesDate =
+      !(selectedDateRange?.from && selectedDateRange?.to) ||
+      (dayjs(item.date).isAfter(
+        dayjs(selectedDateRange.from).subtract(1, 'day'),
+      ) &&
+        dayjs(item.date).isBefore(dayjs(selectedDateRange.to).add(1, 'day')));
+
+    return matchesSearch && matchesDate;
+  });
 
   const onConfirmDelete = () => {
     if (toDeleteId === null) return;
@@ -359,7 +371,7 @@ const Maintenance = () => {
         () => {
           toast.error('Failed to cancel maintenance record. Please try again.');
           setLoadingDelete(false);
-        }
+        },
       );
     };
 
@@ -368,7 +380,8 @@ const Maintenance = () => {
       setToDeleteId(null);
       setLoadingDelete(false);
       toast.error(
-        error?.message || 'Failed to cancel maintenance record. Please try again.'
+        error?.message ||
+          'Failed to cancel maintenance record. Please try again.',
       );
     };
 
@@ -393,8 +406,8 @@ const Maintenance = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search by ID, vehicle, or cost..."
@@ -403,6 +416,10 @@ const Maintenance = () => {
                   className="pl-10"
                 />
               </div>
+              <DateFilter
+                selectedRange={selectedDateRange}
+                onSelect={setSelectedDateRange}
+              />
             </div>
 
             {loading ? (
@@ -418,7 +435,8 @@ const Maintenance = () => {
                     : 'No maintenance records found.'}
                 </p>
                 <p className="text-gray-400 text-sm mt-2">
-                  {!searchQuery && 'Add your first maintenance record to get started.'}
+                  {!searchQuery &&
+                    'Add your first maintenance record to get started.'}
                 </p>
               </div>
             ) : (
