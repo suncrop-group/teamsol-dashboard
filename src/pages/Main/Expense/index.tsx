@@ -37,6 +37,8 @@ import { priceFormatter } from '@/utils';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { TableSkeleton } from '@/components/ui/table-skeleton';
+import { DateFilter } from '@/components/DateFilter';
+import type { DateRange } from 'react-day-picker';
 
 const stylesByStatus = {
   sent: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -275,6 +277,9 @@ const Expenses = () => {
     }[]
   >([]);
   const [search, setSearch] = useState('');
+  const [selectedDateRange, setSelectedDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const user = useSelector(selectUser);
@@ -320,16 +325,22 @@ const Expenses = () => {
   }, []);
 
   useEffect(() => {
-    if (search === '') {
-      setFilteredData(expensesOrders);
-    } else {
-      setFilteredData(
-        expensesOrders.filter((item) =>
-          item.name.toLowerCase().includes(search.toLowerCase()),
-        ),
-      );
-    }
-  }, [search, expensesOrders]);
+    const filtered = expensesOrders.filter((item) => {
+      const matchesSearch = item.name
+        .toLowerCase()
+        .includes(search.toLowerCase());
+      const matchesDate =
+        !(selectedDateRange?.from && selectedDateRange?.to) ||
+        (dayjs(item?.date).valueOf() >=
+          dayjs(selectedDateRange.from).startOf('day').valueOf() &&
+          dayjs(item?.date).valueOf() <=
+            dayjs(selectedDateRange.to).endOf('day').valueOf());
+
+      return matchesSearch && matchesDate;
+    });
+
+    setFilteredData(filtered);
+  }, [search, selectedDateRange, expensesOrders]);
 
   const onConfirmCancel = () => {
     const onDBSuccess = () => {
@@ -419,8 +430,8 @@ const Expenses = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search expenses by name..."
@@ -429,6 +440,10 @@ const Expenses = () => {
                   className="pl-10"
                 />
               </div>
+              <DateFilter
+                selectedRange={selectedDateRange}
+                onSelect={setSelectedDateRange}
+              />
             </div>
 
             {loading ? (
