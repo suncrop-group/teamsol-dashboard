@@ -46,12 +46,12 @@ const SignIn = () => {
       '/employee/login',
       { email: email.toLowerCase().trim(), password },
       onSuccess,
-      onError
+      onError,
     );
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex flex-col items-center justify-center ">
       <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
         <div className="flex flex-col items-center mb-8">
           <img

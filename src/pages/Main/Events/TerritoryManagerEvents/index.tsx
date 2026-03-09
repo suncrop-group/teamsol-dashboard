@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -243,7 +244,7 @@ const EventsTableRow = ({
   return (
     <>
       <TableRow
-        className="hover:bg-gray-50 transition-colors cursor-pointer"
+        className="hover: transition-colors cursor-pointer"
         onClick={() => navigate(`/event-details/${item.id}`)}
       >
         <TableCell>
@@ -370,7 +371,7 @@ const EventsTableRow = ({
       {item?.images &&
         item.images.length > 0 &&
         toggleEventImages.includes(item.id) && (
-          <TableRow className="bg-gray-50 hover:bg-gray-50">
+          <TableRow>
             <TableCell colSpan={6} className="p-4 border-b">
               <div className="flex flex-wrap gap-2">
                 {item.images.map((imageUrl, index) => (
@@ -582,7 +583,7 @@ const TerritoryManagerEvents = () => {
               <div className="hidden md:block overflow-x-auto bg-white rounded-lg shadow border">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-gray-50 hover:bg-gray-50">
+                    <TableRow>
                       <TableHead className="font-semibold">ID / Name</TableHead>
                       <TableHead className="font-semibold">Location</TableHead>
                       <TableHead className="font-semibold">Details</TableHead>

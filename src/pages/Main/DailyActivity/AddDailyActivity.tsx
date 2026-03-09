@@ -406,7 +406,7 @@ const AddDailyActivity: React.FC = () => {
                 placeholder="Previous meter reading"
                 value={prevMeterReading}
                 readOnly
-                className="bg-gray-50"
+                className=""
               />
             </div>
 
@@ -435,7 +435,7 @@ const AddDailyActivity: React.FC = () => {
                 placeholder="Calculated automatically"
                 value={formData.km_traveled}
                 readOnly
-                className="bg-gray-50"
+                className=""
               />
             </div>
 

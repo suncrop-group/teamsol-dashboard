@@ -81,7 +81,7 @@ const Notifications = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen  p-4 sm:p-6 lg:p-8">
       <div className="container mx-auto max-w-3xl">
         <div className="flex items-center gap-3 mb-8">
           <div className="bg-blue-100 p-2.5 rounded-xl text-blue-600 shadow-sm">
@@ -116,7 +116,7 @@ const Notifications = () => {
                 <CardContent className="p-5 sm:p-6 flex flex-col sm:flex-row gap-5 items-start">
                   <div className="flex-shrink-0 mt-1">
                     {item.read ? (
-                      <div className="bg-gray-100 p-2 rounded-full">
+                      <div className=" p-2 rounded-full">
                         <CheckCircle2 className="h-5 w-5 text-gray-400" />
                       </div>
                     ) : (
@@ -152,7 +152,7 @@ const Notifications = () => {
                           size="sm"
                           className={
                             item.read
-                              ? 'h-8 text-xs font-medium text-gray-600 bg-white hover:bg-gray-50 border-gray-200'
+                              ? 'h-8 text-xs font-medium text-gray-600 bg-white hover: border-gray-200'
                               : 'h-8 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 shadow-sm'
                           }
                           onClick={(e) => {

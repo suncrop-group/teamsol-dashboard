@@ -36,8 +36,7 @@ import {
 import { priceFormatter } from '@/utils';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { DateFilter } from '@/components/DateFilter';
-import type { DateRange } from 'react-day-picker';
+import { TableSkeleton } from '@/components/ui/table-skeleton';
 
 const stylesByStatus = {
   sent: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -171,7 +170,7 @@ const ExpenseRow = ({
   onViewImages: (urls: string[]) => void;
 }) => {
   return (
-    <TableRow className="hover:bg-gray-50 transition-colors">
+    <TableRow className="hover: transition-colors">
       <TableCell>
         <div className="flex items-center gap-2">
           <Hash className="h-4 w-4 text-gray-400" />
@@ -276,9 +275,6 @@ const Expenses = () => {
     }[]
   >([]);
   const [search, setSearch] = useState('');
-  const [selectedDateRange, setSelectedDateRange] = useState<
-    DateRange | undefined
-  >(undefined);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const user = useSelector(selectUser);
@@ -324,30 +320,16 @@ const Expenses = () => {
   }, []);
 
   useEffect(() => {
-    let filtered = expensesOrders;
-
-    if (search !== '') {
-      filtered = filtered.filter((item) =>
-        item.name.toLowerCase().includes(search.toLowerCase()),
+    if (search === '') {
+      setFilteredData(expensesOrders);
+    } else {
+      setFilteredData(
+        expensesOrders.filter((item) =>
+          item.name.toLowerCase().includes(search.toLowerCase()),
+        ),
       );
     }
-
-    if (selectedDateRange?.from || selectedDateRange?.to) {
-      filtered = filtered.filter((item) => {
-        return (
-          !(selectedDateRange?.from && selectedDateRange?.to) ||
-          (dayjs(item.date).isAfter(
-            dayjs(selectedDateRange.from).subtract(1, 'day'),
-          ) &&
-            dayjs(item.date).isBefore(
-              dayjs(selectedDateRange.to).add(1, 'day'),
-            ))
-        );
-      });
-    }
-
-    setFilteredData(filtered);
-  }, [search, selectedDateRange, expensesOrders]);
+  }, [search, expensesOrders]);
 
   const onConfirmCancel = () => {
     const onDBSuccess = () => {
@@ -423,7 +405,7 @@ const Expenses = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+    <div className="min-h-screen  p-4">
       <div className="container mx-auto max-w-7xl">
         <Card className="shadow-lg border-0">
           <CardHeader className="bg-white border-b">
@@ -437,8 +419,8 @@ const Expenses = () => {
           </CardHeader>
           <CardContent className="p-6">
             {/* Search Bar */}
-            <div className="mb-6 flex items-center gap-2">
-              <div className="relative flex-1">
+            <div className="mb-6">
+              <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search expenses by name..."
@@ -447,15 +429,25 @@ const Expenses = () => {
                   className="pl-10"
                 />
               </div>
-              <DateFilter
-                selectedRange={selectedDateRange}
-                onSelect={setSelectedDateRange}
-              />
             </div>
 
             {loading ? (
-              <div className="flex justify-center items-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+              <div className="w-full overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="font-semibold">ID</TableHead>
+                      <TableHead className="font-semibold">Name</TableHead>
+                      <TableHead className="font-semibold">Amount</TableHead>
+                      <TableHead className="font-semibold">Date</TableHead>
+                      <TableHead className="font-semibold">Status</TableHead>
+                      <TableHead className="font-semibold">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableSkeleton rows={20} columns={6} />
+                  </TableBody>
+                </Table>
               </div>
             ) : filteredData.length === 0 ? (
               <div className="text-center py-12">
@@ -475,7 +467,7 @@ const Expenses = () => {
                 <div className="hidden md:block overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-gray-50 hover:bg-gray-50">
+                      <TableRow>
                         <TableHead className="font-semibold">ID</TableHead>
                         <TableHead className="font-semibold">Name</TableHead>
                         <TableHead className="font-semibold">Amount</TableHead>

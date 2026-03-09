@@ -258,7 +258,7 @@ const AddFuel = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen  flex items-center justify-center p-4">
       {loading ? (
         <Loader2 className="h-8 w-8 animate-spin" />
       ) : (

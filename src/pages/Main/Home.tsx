@@ -42,7 +42,7 @@ const Home = () => {
           setProjectDetails({
             title: response.data.project.heading,
             description: response.data.project.sub_heading,
-          })
+          }),
         );
         dispatch(setOdooCred(response.data.project.odoo_configuration));
         dispatch(setOdooAdmin(response.data.odooAdmin));
@@ -63,7 +63,7 @@ const Home = () => {
         (response) => {
           dispatch(setNotificationCount(response.data));
         },
-        () => toast.error('Failed to fetch notification count.')
+        () => toast.error('Failed to fetch notification count.'),
       );
     };
     fetchUser();
@@ -80,8 +80,8 @@ const Home = () => {
           ?.map((item) =>
             homeTiles.find(
               (tile) =>
-                tile?.code?.toLowerCase() === item?.module?.code?.toLowerCase()
-            )
+                tile?.code?.toLowerCase() === item?.module?.code?.toLowerCase(),
+            ),
           )
           .filter(Boolean) || [];
 
@@ -101,7 +101,7 @@ const Home = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen  p-4 sm:p-6 lg:p-8">
       <div className="container mx-auto max-w-7xl">
         {/* Welcome Header */}
         <div className="mb-12">
@@ -125,7 +125,7 @@ const Home = () => {
           /* Empty State */
           <Card className="bg-white shadow-sm border-0">
             <CardContent className="flex flex-col items-center justify-center py-16">
-              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+              <div className="w-20 h-20  rounded-full flex items-center justify-center mb-4">
                 <Grid3x3 className="h-10 w-10 text-gray-400" />
               </div>
               <h3 className="text-xl font-semibold text-black mb-2">

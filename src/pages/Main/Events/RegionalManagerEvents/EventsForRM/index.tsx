@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import {
@@ -282,7 +283,7 @@ const EventsTableRow = ({
   return (
     <>
       <TableRow
-        className="hover:bg-gray-50 transition-colors cursor-pointer"
+        className="hover: transition-colors cursor-pointer"
         onClick={() => navigate(`/event-details-rm/${item.id}`)}
       >
         <TableCell>
@@ -409,7 +410,7 @@ const EventsTableRow = ({
       {item?.images &&
         item.images.length > 0 &&
         toggleEventImages.includes(item.id) && (
-          <TableRow className="bg-gray-50 hover:bg-gray-50">
+          <TableRow>
             <TableCell colSpan={6} className="p-4 border-b">
               <div className="flex flex-wrap gap-2">
                 {item.images.map((imageUrl, index) => (
@@ -588,7 +589,7 @@ const EventsForRM = () => {
           .filter((item) => item.data.length > 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+    <div className="min-h-screen  p-4">
       <div className="container mx-auto max-w-7xl">
         <Card className="shadow-lg border-0">
           <CardHeader className="bg-white border-b">
@@ -713,7 +714,7 @@ const EventsForRM = () => {
                     <div className="hidden md:block overflow-x-auto bg-white rounded-lg shadow border">
                       <Table>
                         <TableHeader>
-                          <TableRow className="bg-gray-50 hover:bg-gray-50">
+                          <TableRow>
                             <TableHead className="font-semibold">
                               ID / Name
                             </TableHead>

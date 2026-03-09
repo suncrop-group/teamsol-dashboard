@@ -62,7 +62,7 @@ const AddExpenseReporting = () => {
         `/expense/categories?type=${state?.event_id ? 'events' : ''}`,
         null,
         onSuccess,
-        onError
+        onError,
       );
     };
 
@@ -77,7 +77,8 @@ const AddExpenseReporting = () => {
   useEffect(() => {
     if (expenseCategory) {
       const selectedCategory = expensesCategory.find(
-        (item: any) => item.id === expenseCategory
+        (item: { id: string; is_attachment?: boolean }) =>
+          item.id === expenseCategory,
       );
       if (selectedCategory) {
         setIsAttachmentAllowed(selectedCategory?.is_attachment ?? false);
@@ -139,12 +140,12 @@ const AddExpenseReporting = () => {
     if (files.length > 0 && isAttachmentAllowed) {
       const uploadPromises = files.map(async (file, i) => {
         const fileName = `expenses-${user.name}-${dayjs().format(
-          'DD-MM-YYYY'
+          'DD-MM-YYYY',
         )}-${dayjs().format('HH-mm-ss')}-${i}`;
         return await uploadToCloudinary(
           file,
           `expenses-${user.name}/${dayjs().format('MMMM-YYYY')}`,
-          fileName
+          fileName,
         );
       });
 
@@ -159,8 +160,6 @@ const AddExpenseReporting = () => {
         return;
       }
     }
-
-
 
     const data: {
       name: string;
@@ -207,7 +206,7 @@ const AddExpenseReporting = () => {
       const dbData = {
         amount: amount,
         name: expenseCategoriesData.find(
-          (item) => item.value === expenseCategory
+          (item) => item.value === expenseCategory,
         )?.label,
         category_id: expenseCategory,
         description: description,
@@ -240,7 +239,7 @@ const AddExpenseReporting = () => {
       '/post/expense',
       { data: { ...data, total_amount_currency: Number(amount) } },
       onSuccess,
-      onError
+      onError,
     );
   };
 
@@ -287,7 +286,7 @@ const AddExpenseReporting = () => {
     }
   };
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen  flex items-center justify-center p-4">
       {loading ? (
         <Loader2 className="h-8 w-8 animate-spin" />
       ) : (
@@ -309,7 +308,7 @@ const AddExpenseReporting = () => {
                       variant="outline"
                       className={cn(
                         'w-full justify-start text-left font-normal',
-                        !date && 'text-muted-foreground'
+                        !date && 'text-muted-foreground',
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
@@ -330,7 +329,7 @@ const AddExpenseReporting = () => {
                         date > new Date() ||
                         date <
                           new Date(
-                            new Date().setDate(new Date().getDate() - 5)
+                            new Date().setDate(new Date().getDate() - 5),
                           ) ||
                         date.getDate() === new Date().getDate()
                       }
@@ -379,7 +378,7 @@ const AddExpenseReporting = () => {
                         {files.map((file, index) => (
                           <div
                             key={index}
-                            className="flex items-center justify-between bg-gray-50 p-2 rounded-md"
+                            className="flex items-center justify-between  p-2 rounded-md"
                           >
                             <span className="text-sm truncate flex-1">
                               {file.name}
@@ -394,7 +393,7 @@ const AddExpenseReporting = () => {
                                 size="sm"
                                 onClick={() => {
                                   setFiles((prev) =>
-                                    prev.filter((_, i) => i !== index)
+                                    prev.filter((_, i) => i !== index),
                                   );
                                 }}
                                 className="h-6 w-6 p-0 text-red-500 hover:text-red-700"

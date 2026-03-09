@@ -67,7 +67,7 @@ const AddPersonalUse = () => {
           date: selectedDate,
         },
         onCreatedSuccess,
-        onCreatedError
+        onCreatedError,
       );
     };
 
@@ -91,7 +91,7 @@ const AddPersonalUse = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen  flex items-center justify-center p-4">
       {loading ? (
         <Loader2 className="h-8 w-8 animate-spin" />
       ) : (
@@ -109,7 +109,7 @@ const AddPersonalUse = () => {
                       variant="outline"
                       className={cn(
                         'w-full justify-start text-left font-normal',
-                        !selectedDate && 'text-muted-foreground'
+                        !selectedDate && 'text-muted-foreground',
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
@@ -132,7 +132,7 @@ const AddPersonalUse = () => {
                         date > new Date() ||
                         date <
                           new Date(
-                            new Date().setDate(new Date().getDate() - 5)
+                            new Date().setDate(new Date().getDate() - 5),
                           ) ||
                         date.getDate() === new Date().getDate()
                       }

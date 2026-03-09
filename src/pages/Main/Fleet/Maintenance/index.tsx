@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+
 import {
   Loader2,
   Search,
@@ -54,7 +55,7 @@ const statusStyles = {
   'to report': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
   done: 'bg-teal-100 text-teal-800 hover:bg-teal-200',
   success: 'bg-green-100 text-green-800 hover:bg-green-200',
-  default: 'bg-gray-100 text-gray-800 hover:bg-gray-200',
+  default: ' text-gray-800 hover:bg-gray-200',
 };
 
 // Mobile Card Component
@@ -191,7 +192,7 @@ const MaintenanceRow = ({
   onViewImage: (url: string) => void;
 }) => {
   return (
-    <TableRow className="hover:bg-gray-50 transition-colors">
+    <TableRow className="hover: transition-colors">
       <TableCell>
         <div className="flex items-center gap-2">
           <Hash className="h-4 w-4 text-gray-400" />
@@ -390,7 +391,7 @@ const Maintenance = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+    <div className="min-h-screen  p-4">
       <div className="container mx-auto max-w-7xl">
         <Card className="shadow-lg border-0">
           <CardHeader className="bg-white border-b">
@@ -445,7 +446,7 @@ const Maintenance = () => {
                 <div className="hidden md:block overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-gray-50 hover:bg-gray-50">
+                      <TableRow>
                         <TableHead className="font-semibold">ID</TableHead>
                         <TableHead className="font-semibold">Vehicle</TableHead>
                         <TableHead className="font-semibold">Cost</TableHead>

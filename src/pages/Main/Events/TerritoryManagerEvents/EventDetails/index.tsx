@@ -233,11 +233,11 @@ const TMCreatedEventDetails = () => {
   const [uploadLoading, setUploadLoading] = useState(false);
   const [eventImagesRemoving, setEventImagesRemoving] = useState<string[]>([]);
   const [selectedEventImage, setSelectedEventImage] = useState<string | null>(
-    null
+    null,
   );
   const [attendeesRemoving, setAttendeesRemoving] = useState<string[]>([]);
   const [removingAttendeeId, setRemovingAttendeeId] = useState<string | null>(
-    null
+    null,
   );
   const [isAttendeeRemoveDialogOpen, setIsAttendeeRemoveDialogOpen] =
     useState(false);
@@ -268,13 +268,12 @@ const TMCreatedEventDetails = () => {
   const [isAttendeeDialogOpen, setIsAttendeeDialogOpen] = useState(false);
   const [isStageDialogOpen, setIsStageDialogOpen] = useState(false);
 
-
   const fetchAttendees = () => {
     const onSuccessfulFetch = (data) => {
       setAttendeeList(
         data.data.sort(
-          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
-        )
+          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+        ),
       );
       setAttendeeLoading(false);
     };
@@ -288,7 +287,7 @@ const TMCreatedEventDetails = () => {
       `/events/attendee?event_id=${eventId}`,
       null,
       onSuccessfulFetch,
-      onError
+      onError,
     );
   };
 
@@ -304,14 +303,14 @@ const TMCreatedEventDetails = () => {
         setEventExpenses(
           response.data.expenses.sort(
             (a, b) =>
-              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
-          )
+              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+          ),
         );
       },
       () => {
         setLoading(false);
         toast.error('Failed to fetch event details', { description: 'Error' });
-      }
+      },
     );
   };
 
@@ -350,7 +349,7 @@ const TMCreatedEventDetails = () => {
         '/events/stage',
         { event_id: event.id, stage_id: stageId },
         onSuccess,
-        onError
+        onError,
       );
     };
     const onServerError = () => {
@@ -363,7 +362,7 @@ const TMCreatedEventDetails = () => {
       `/event/stage/change`,
       { data: { event_id: event.id, stage_id: stageId } },
       onServerSuccess,
-      onServerError
+      onServerError,
     );
   };
 
@@ -414,7 +413,7 @@ const TMCreatedEventDetails = () => {
             farmer_verify: attendee.farmer_verify,
           },
           onSuccess,
-          onError
+          onError,
         );
       }
     };
@@ -428,7 +427,7 @@ const TMCreatedEventDetails = () => {
       `/post/event/attendees`,
       { data: { ...data } },
       onServerSuccess,
-      onServerError
+      onServerError,
     );
   };
 
@@ -451,10 +450,10 @@ const TMCreatedEventDetails = () => {
         `/events/attendee/search?phone_no=${phone_no}`,
         null,
         onSuccess,
-        onError
+        onError,
       );
     }, 500),
-    []
+    [],
   );
 
   const handlePhoneNumberChange = (text) => {
@@ -464,7 +463,6 @@ const TMCreatedEventDetails = () => {
 
   const fetchEventStagesList = () => {
     const onSuccess = (response) => {
-
       setUpdateStatusFetching(false);
       setIsStageDialogOpen(true);
       setEventStageList(response.data);
@@ -533,7 +531,7 @@ const TMCreatedEventDetails = () => {
         return uploadToCloudinary(
           renamedFile,
           `/events/tm/${event.id}`,
-          `${index + 1}-${file.name.split('.')[0]}`
+          `${index + 1}-${file.name.split('.')[0]}`,
         );
       });
 
@@ -552,7 +550,7 @@ const TMCreatedEventDetails = () => {
             },
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -565,7 +563,7 @@ const TMCreatedEventDetails = () => {
             images: uploadedUrls,
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -603,7 +601,7 @@ const TMCreatedEventDetails = () => {
             },
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -618,7 +616,7 @@ const TMCreatedEventDetails = () => {
               : [],
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -655,7 +653,7 @@ const TMCreatedEventDetails = () => {
             },
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -666,13 +664,13 @@ const TMCreatedEventDetails = () => {
           `/events/attendee?event_id=${event.id}&attendee_id=${removingAttendeeId}`,
           null,
           resolve,
-          reject
+          reject,
         );
       });
 
       toast.success('Attendee removed successfully');
       setAttendeeList((prev) =>
-        prev.filter((attendee) => attendee.id !== removingAttendeeId)
+        prev.filter((attendee) => attendee.id !== removingAttendeeId),
       );
       fetchEventDetails(false);
       setIsAttendeeRemoveDialogOpen(false);
@@ -682,13 +680,13 @@ const TMCreatedEventDetails = () => {
       toast.error('Failed to remove attendee');
     } finally {
       setAttendeesRemoving((prev) =>
-        prev.filter((id) => id !== removingAttendeeId)
+        prev.filter((id) => id !== removingAttendeeId),
       );
     }
   };
 
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(
-    null
+    null,
   );
   const [isExpenseCancelDialogOpen, setIsExpenseCancelDialogOpen] =
     useState(false);
@@ -729,12 +727,12 @@ const TMCreatedEventDetails = () => {
             company_id: user.company.id,
           },
           onDBSuccess,
-          onDBError
+          onDBError,
         );
       } else {
         setExpenseCancelLoading(false);
         toast.error(
-          response?.error || 'Something went wrong. Please try again.'
+          response?.error || 'Something went wrong. Please try again.',
         );
       }
     };
@@ -749,15 +747,14 @@ const TMCreatedEventDetails = () => {
     const data = {
       expense_id: selectedExpenseId,
       company_id: user.company.id,
-      event_id:event.id,
-      expense_category_id: eventExpenses.find((item)=> item.id === selectedExpenseId).category_id
-      
+      event_id: event.id,
+      expense_category_id: eventExpenses.find(
+        (item) => item.id === selectedExpenseId,
+      ).category_id,
     };
-    
+
     callServerAPI('POST', `/delete/expenses`, { data }, onSuccess, onError);
   };
-
-  
 
   return (
     <div className="container">
@@ -770,7 +767,9 @@ const TMCreatedEventDetails = () => {
           <div className="flex flex-col gap-6">
             <Card>
               <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
-                <CardTitle className="text-xl">Event Detail #{event?.id}</CardTitle>
+                <CardTitle className="text-xl">
+                  Event Detail #{event?.id}
+                </CardTitle>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon">
@@ -838,13 +837,15 @@ const TMCreatedEventDetails = () => {
                       }
                       onClick={fetchEventStagesList}
                     >
-                      {event?.event_stage?.name?.toLowerCase()?.includes('cancel')
+                      {event?.event_stage?.name
+                        ?.toLowerCase()
+                        ?.includes('cancel')
                         ? 'Cancelled'
                         : event?.verified
-                        ? 'Verified'
-                        : updateStatusFetching
-                        ? 'Getting Event Stages...'
-                        : 'Update Event Stage'}
+                          ? 'Verified'
+                          : updateStatusFetching
+                            ? 'Getting Event Stages...'
+                            : 'Update Event Stage'}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -852,7 +853,9 @@ const TMCreatedEventDetails = () => {
               <CardContent className="pt-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <Label className="text-sm text-gray-500">Event Address</Label>
+                    <Label className="text-sm text-gray-500">
+                      Event Address
+                    </Label>
                     <p className="font-medium mt-1">{event?.name}</p>
                   </div>
                   <div>
@@ -869,7 +872,9 @@ const TMCreatedEventDetails = () => {
                   </div>
                   <div>
                     <Label className="text-sm text-gray-500">Event Type</Label>
-                    <p className="font-medium mt-1">{event?.event_type?.name}</p>
+                    <p className="font-medium mt-1">
+                      {event?.event_type?.name}
+                    </p>
                   </div>
                   {event?.crops?.length > 0 && (
                     <div className="md:col-span-2">
@@ -1041,7 +1046,7 @@ const TMCreatedEventDetails = () => {
                       return (
                         <div
                           key={item.id}
-                          className="bg-gray-50 rounded-lg p-4 border border-gray-100 hover:shadow-sm transition-shadow"
+                          className=" rounded-lg p-4 border border-gray-100 hover:shadow-sm transition-shadow"
                         >
                           <div className="flex justify-between items-start mb-2">
                             <p className="font-semibold text-gray-900">
@@ -1130,8 +1135,8 @@ const TMCreatedEventDetails = () => {
           </div>
 
           <p className="text-xs text-gray-500 text-center mt-4">
-            Actions can only be performed at least four days after the event's end
-            date, and the event has not been cancelled.
+            Actions can only be performed at least four days after the event's
+            end date, and the event has not been cancelled.
           </p>
 
           <Dialog
@@ -1210,7 +1215,7 @@ const TMCreatedEventDetails = () => {
                 </div>
 
                 {/* Host Farmer Checkbox */}
-                <div className="flex items-center space-x-2 p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center space-x-2 p-4  rounded-lg">
                   <input
                     id="farmer_verify"
                     type="checkbox"

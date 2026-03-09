@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+
 import {
   Dialog,
   DialogContent,
@@ -119,7 +120,7 @@ const ActivityCard = ({ item }: { item: Activity }) => {
 // Desktop Table Row Component
 const ActivityRow = ({ item }: { item: Activity }) => {
   return (
-    <TableRow className="hover:bg-gray-50 transition-colors">
+    <TableRow className="hover: transition-colors">
       <TableCell>
         <div className="flex items-center gap-2">
           <Hash className="h-4 w-4 text-gray-400" />
@@ -318,7 +319,7 @@ const DailyActivity: React.FC = () => {
   const groupedActivities = createGroupedActivities();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+    <div className="min-h-screen  p-4">
       <div className="container mx-auto max-w-7xl">
         <Card className="shadow-lg border-0">
           <CardHeader className="bg-white border-b">
@@ -454,7 +455,7 @@ const DailyActivity: React.FC = () => {
                     <div className="hidden md:block overflow-x-auto">
                       <Table>
                         <TableHeader>
-                          <TableRow className="bg-gray-50 hover:bg-gray-50">
+                          <TableRow>
                             <TableHead className="font-semibold">ID</TableHead>
                             <TableHead className="font-semibold">
                               Date

@@ -110,7 +110,7 @@ const ProfileSettings = () => {
   };
 
   return (
-    <div className="min-h-screen flex justify-center items-center bg-gray-50 py-8 px-2">
+    <div className="min-h-screen flex justify-center items-center  py-8 px-2">
       <Card className="w-full max-w-xl">
         <CardContent className="py-8 px-4 sm:px-8">
           <Tabs

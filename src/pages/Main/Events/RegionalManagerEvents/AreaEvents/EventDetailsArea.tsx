@@ -15,7 +15,7 @@ import { Eye, MoreVertical, X } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import { callApi, callServerAPI } from '@/api';
-import { priceFormatter } from '@/utils';
+import { parseCustomDate, priceFormatter } from '@/utils';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import { Loader2 } from 'lucide-react';
 import {
@@ -213,7 +213,7 @@ const EventDetailsArea = () => {
   const [attendeeList, setAttendeeList] = useState([]);
   const [toggleExpenseImages, setToggleExpenseImages] = useState<string[]>([]);
   const [selectedEventImage, setSelectedEventImage] = useState<string | null>(
-    null
+    null,
   );
   const [event, setEvent] = useState({
     id: '',
@@ -243,8 +243,8 @@ const EventDetailsArea = () => {
     const onSuccessfulFetch = (data) => {
       setAttendeeList(
         data.data.sort(
-          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
-        )
+          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+        ),
       );
       setAttendeeLoading(false);
     };
@@ -258,7 +258,7 @@ const EventDetailsArea = () => {
       `/events/attendee?event_id=${eventId}`,
       null,
       onSuccessfulFetch,
-      onError
+      onError,
     );
   };
 
@@ -275,14 +275,14 @@ const EventDetailsArea = () => {
         setEventExpenses(
           response.data.expenses.sort(
             (a, b) =>
-              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
-          )
+              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+          ),
         );
       },
       () => {
         setLoading(false);
         toast.error('Failed to fetch event details', { description: 'Error' });
-      }
+      },
     );
   };
 
@@ -322,7 +322,7 @@ const EventDetailsArea = () => {
         },
         (error) => {
           onError(error);
-        }
+        },
       );
     };
 
@@ -351,7 +351,7 @@ const EventDetailsArea = () => {
       `/verify/event`,
       { data },
       onConfirmEventSuccess,
-      onConfirmEventError
+      onConfirmEventError,
     );
   };
 
@@ -383,7 +383,7 @@ const EventDetailsArea = () => {
         `/events/update?event_id=${event.id}`,
         { check_list_ids: selectedCheckList },
         onSuccess,
-        onError
+        onError,
       );
     };
     const onServerError = () => {
@@ -396,7 +396,7 @@ const EventDetailsArea = () => {
       `/post/check/checklist`,
       { data },
       onServerSuccess,
-      onServerError
+      onServerError,
     );
   };
 
@@ -422,7 +422,7 @@ const EventDetailsArea = () => {
         `/events/update?event_id=${event.id}`,
         { rsmAttended: true },
         onSuccess,
-        onError
+        onError,
       );
     };
     const onConfirmEventError = () => {
@@ -437,9 +437,12 @@ const EventDetailsArea = () => {
       `/rsm/attended`,
       { data },
       onConfirmEventSuccess,
-      onConfirmEventError
+      onConfirmEventError,
     );
   };
+
+  const endDate = parseCustomDate(event?.date_end);
+  const canMakeAction = dayjs().isBefore(dayjs(endDate).add(4, 'day'));
 
   return (
     <div className="container">
@@ -465,11 +468,22 @@ const EventDetailsArea = () => {
                   <DropdownMenuContent className="w-56" align="end">
                     <DropdownMenuItem
                       disabled={
+                        !canMakeAction ||
                         event?.event_stage?.name
                           ?.toLowerCase()
-                          ?.includes('cancel') || event?.verified
+                          ?.includes('cancel') ||
+                        event?.verified
                       }
                       onClick={() => {
+                        if (!canMakeAction) {
+                          toast.error(
+                            "Actions can only be performed at least four days after the event's end date, and the event has not been cancelled.",
+                            {
+                              description: 'Error',
+                            },
+                          );
+                          return;
+                        }
                         setIsVerifyDialogOpen(true);
                       }}
                     >
@@ -478,8 +492,8 @@ const EventDetailsArea = () => {
                         ?.includes('cancel')
                         ? 'Cancelled'
                         : event?.verified
-                        ? 'Verified'
-                        : 'Verify Event'}
+                          ? 'Verified'
+                          : 'Verify Event'}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={
@@ -650,7 +664,7 @@ const EventDetailsArea = () => {
                         return (
                           <div
                             key={index}
-                            className="bg-gray-50 rounded-lg p-4 border border-gray-100 hover:shadow-sm transition-shadow"
+                            className=" rounded-lg p-4 border border-gray-100 hover:shadow-sm transition-shadow"
                           >
                             <div className="flex justify-between items-start mb-2">
                               <p className="font-semibold text-gray-900">
@@ -755,12 +769,12 @@ const EventDetailsArea = () => {
                   event?.event_type?.check_list_ids.map((item) => (
                     <Card
                       key={item.id}
-                      className="flex flex-row items-center justify-between p-4 bg-gray-50"
+                      className="flex flex-row items-center justify-between p-4 "
                     >
                       <span className="text-sm">{item.name}</span>
                       <Checkbox
                         checked={selectedCheckList.some(
-                          (check) => check.id === item.id
+                          (check) => check.id === item.id,
                         )}
                         onCheckedChange={(checked) => {
                           setSelectedCheckList((prev) => {
@@ -768,7 +782,7 @@ const EventDetailsArea = () => {
                               return [...prev, item];
                             } else {
                               return prev.filter(
-                                (check) => check.id !== item.id
+                                (check) => check.id !== item.id,
                               );
                             }
                           });

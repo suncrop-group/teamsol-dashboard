@@ -25,6 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+
 import {
   ArrowLeft,
   Grid3X3,
@@ -141,7 +142,7 @@ const ActivityRow: React.FC<{ item: AreaActivity; onClick: () => void }> = ({
 }) => {
   return (
     <TableRow
-      className="cursor-pointer hover:bg-gray-50 transition-colors"
+      className="cursor-pointer hover: transition-colors"
       onClick={onClick}
     >
       <TableCell>
@@ -206,7 +207,7 @@ const RMAreaActivities: React.FC = () => {
 
   const [search, setSearch] = useState('');
   const [filteredActivities, setFilteredActivities] = useState<AreaActivity[]>(
-    []
+    [],
   );
 
   const [groupBy, setGroupBy] = useState<GroupingOptions>({
@@ -242,7 +243,7 @@ const RMAreaActivities: React.FC = () => {
           description: 'Please try again',
         });
         setLoading(false);
-      }
+      },
     );
   };
 
@@ -262,9 +263,9 @@ const RMAreaActivities: React.FC = () => {
             item.employee?.name?.toLowerCase().includes(search.toLowerCase()) ||
             item.region?.name?.toLowerCase().includes(search.toLowerCase()) ||
             item.territory?.some((t) =>
-              t.name.toLowerCase().includes(search.toLowerCase())
-            )
-        )
+              t.name.toLowerCase().includes(search.toLowerCase()),
+            ),
+        ),
       );
     }
   }, [search, activities]);
@@ -313,7 +314,7 @@ const RMAreaActivities: React.FC = () => {
           acc[sectionTitle].push(activity);
           return acc;
         },
-        {}
+        {},
       );
 
       return Object.keys(grouped).map((key) => ({
@@ -329,7 +330,7 @@ const RMAreaActivities: React.FC = () => {
 
   // Handle grouping toggle for temporary state
   const toggleTempGrouping = (
-    filterType: 'territories' | 'date' | 'employees'
+    filterType: 'territories' | 'date' | 'employees',
   ) => {
     setTempGroupBy((prev) => ({
       ...prev,
@@ -351,7 +352,7 @@ const RMAreaActivities: React.FC = () => {
   const groupedActivities = createGroupedActivities();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+    <div className="min-h-screen  p-4">
       <div className="container mx-auto max-w-7xl">
         <Card className="shadow-lg border-0">
           <CardHeader className="bg-white border-b">
@@ -505,7 +506,10 @@ const RMAreaActivities: React.FC = () => {
 
             {loading ? (
               <div className="flex justify-center items-center h-64">
-                <Loader loading={true} className="h-8 w-8 animate-spin text-blue-600" />
+                <Loader
+                  loading={true}
+                  className="h-8 w-8 animate-spin text-blue-600"
+                />
               </div>
             ) : filteredActivities.length === 0 ? (
               <div className="text-center py-12">
@@ -536,7 +540,7 @@ const RMAreaActivities: React.FC = () => {
                     <div className="hidden md:block overflow-x-auto rounded-md border">
                       <Table>
                         <TableHeader>
-                          <TableRow className="bg-gray-50 hover:bg-gray-50">
+                          <TableRow>
                             <TableHead className="font-semibold">ID</TableHead>
                             <TableHead className="font-semibold">
                               Employee

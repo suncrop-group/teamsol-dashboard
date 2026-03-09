@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+
 import { Loader2, Eye, FileText } from 'lucide-react';
 import { saveAs } from 'file-saver';
 
@@ -141,7 +142,7 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
       () => {
         setLoading(false);
         toast.error('Failed to fetch report data', { description: 'Error' });
-      }
+      },
     );
   };
 
@@ -160,7 +161,7 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
     try {
       const base64WithoutPrefix = pdfBase64.replace(
         'data:application/pdf;base64,',
-        ''
+        '',
       );
       const byteCharacters = atob(base64WithoutPrefix);
       const byteNumbers = new Array(byteCharacters.length);
@@ -197,7 +198,7 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
     try {
       const base64WithoutPrefix = pdfBase64.replace(
         'data:application/pdf;base64,',
-        ''
+        '',
       );
       const byteCharacters = atob(base64WithoutPrefix);
       const byteNumbers = new Array(byteCharacters.length);
@@ -209,18 +210,18 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
       const file = new File(
         [blob],
         `Expense-Report_${user.name}_${month}-${selectedYear}-${dayjs().format(
-          'HH_mm'
+          'HH_mm',
         )}`.replace(/ /g, '_'),
-        { type: 'application/pdf' }
+        { type: 'application/pdf' },
       );
 
       const uploadImage = await uploadToCloudinary(
         file,
         `Expense-Report_${user.name}-${month}-${selectedYear}`.replace(
           / /g,
-          '_'
+          '_',
         ),
-        file.name
+        file.name,
       );
 
       if (!uploadImage) {
@@ -252,7 +253,7 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
         () => {
           setLoading(false);
           toast.error('Failed to submit the report', { description: 'Error' });
-        }
+        },
       );
     } catch (error) {
       setLoading(false);
@@ -351,7 +352,7 @@ const ExpenseReports = () => {
         (response) => {
           response.data.sort(
             (a, b) =>
-              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
+              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
           );
           setFuelData(response.data);
           setLoading(false);
@@ -361,7 +362,7 @@ const ExpenseReports = () => {
           toast.error('Failed to fetch expense reports', {
             description: 'Error',
           });
-        }
+        },
       );
     };
     fetchFuelData();
@@ -380,7 +381,7 @@ const ExpenseReports = () => {
       null,
       (response) => {
         response.data.sort(
-          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
+          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
         );
         setFuelData(response.data);
         setLoading(false);
@@ -390,7 +391,7 @@ const ExpenseReports = () => {
         toast.error('Failed to refresh expense reports', {
           description: 'Error',
         });
-      }
+      },
     );
   };
 

@@ -263,15 +263,15 @@ const EventDetailsOfRegionalManagerEvent = () => {
         setAttendeeList(
           data.data.sort(
             (a, b) =>
-              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
-          )
+              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+          ),
         );
         setAttendeeLoading(false);
       },
       () => {
         toast.error('Failed to fetch attendees', { description: 'Error' });
         setAttendeeLoading(false);
-      }
+      },
     );
   };
 
@@ -286,15 +286,15 @@ const EventDetailsOfRegionalManagerEvent = () => {
         setEventExpenses(
           response.data.expenses.sort(
             (a, b) =>
-              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()
-          )
+              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+          ),
         );
         setLoading(false);
       },
       () => {
         toast.error('Failed to fetch event details', { description: 'Error' });
         setLoading(false);
-      }
+      },
     );
   };
 
@@ -343,14 +343,14 @@ const EventDetailsOfRegionalManagerEvent = () => {
             });
             setUpdateStatusFetching(false);
             setUpdatingEventStageId(null);
-          }
+          },
         );
       },
       () => {
         toast.error('Failed to update event stage', { description: 'Error' });
         setUpdateStatusFetching(false);
         setUpdatingEventStageId(null);
-      }
+      },
     );
   };
 
@@ -382,7 +382,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
         },
         (error) => {
           onError(error);
-        }
+        },
       );
     };
 
@@ -411,7 +411,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
       `/verify/event`,
       { data },
       onConfirmEventSuccess,
-      onConfirmEventError
+      onConfirmEventError,
     );
   };
 
@@ -440,14 +440,14 @@ const EventDetailsOfRegionalManagerEvent = () => {
             toast.error(error?.message || 'Failed to confirm event', {
               description: 'Error',
             });
-          }
+          },
         );
       },
       () => {
         setRsmAttendedLoading(false);
         setIsMarkAttendedOpen(false);
         toast.error('Failed to confirm event', { description: 'Error' });
-      }
+      },
     );
   };
 
@@ -505,14 +505,14 @@ const EventDetailsOfRegionalManagerEvent = () => {
             () => {
               setAddAttendeeLoading(false);
               toast.error('Failed to add attendee', { description: 'Error' });
-            }
+            },
           );
         }
       },
       () => {
         setAddAttendeeLoading(false);
         toast.error('Failed to add attendee', { description: 'Error' });
-      }
+      },
     );
   };
 
@@ -535,7 +535,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
       () => {
         setUpdateStatusFetching(false);
         toast.error('Failed to fetch event stage', { description: 'Error' });
-      }
+      },
     );
   };
 
@@ -552,7 +552,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
         return uploadToCloudinary(
           renamedFile,
           `/events/rm/${event.id}`,
-          `${index + 1}-${file.name.split('.')[0]}`
+          `${index + 1}-${file.name.split('.')[0]}`,
         );
       });
 
@@ -571,7 +571,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
             },
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -584,7 +584,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
             images: uploadedUrls,
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -622,7 +622,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
             },
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -637,7 +637,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
               : [],
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -713,7 +713,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
             },
           },
           resolve,
-          reject
+          reject,
         );
       });
 
@@ -724,13 +724,13 @@ const EventDetailsOfRegionalManagerEvent = () => {
           `/events/attendee?event_id=${event.id}&attendee_id=${removingAttendeeId}`,
           null,
           resolve,
-          reject
+          reject,
         );
       });
 
       toast.success('Attendee removed successfully');
       setAttendeeList((prev) =>
-        prev.filter((attendee) => attendee.id !== removingAttendeeId)
+        prev.filter((attendee) => attendee.id !== removingAttendeeId),
       );
       fetchEventDetails(false);
       setIsAttendeeRemoveDialogOpen(false);
@@ -740,7 +740,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
       toast.error('Failed to remove attendee');
     } finally {
       setAttendeesRemoving((prev) =>
-        prev.filter((id) => id !== removingAttendeeId)
+        prev.filter((id) => id !== removingAttendeeId),
       );
     }
   };
@@ -889,8 +889,8 @@ const EventDetailsOfRegionalManagerEvent = () => {
                     {event?.event_stage?.name?.toLowerCase()?.includes('cancel')
                       ? 'Cancelled'
                       : event?.verified
-                      ? 'Verified'
-                      : 'Verify'}{' '}
+                        ? 'Verified'
+                        : 'Verify'}{' '}
                     Event
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -1055,7 +1055,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
                       </div>
 
                       {files.length > 0 && (
-                        <div className="bg-gray-50 rounded-lg p-4">
+                        <div className=" rounded-lg p-4">
                           <h4 className="text-sm font-medium text-gray-700 mb-2">
                             Selected Files ({files.length}/5):
                           </h4>
@@ -1077,7 +1077,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
                                   className="ml-2 h-6 w-6 p-0"
                                   onClick={() => {
                                     setFiles((prev) =>
-                                      prev.filter((_, i) => i !== index)
+                                      prev.filter((_, i) => i !== index),
                                     );
                                   }}
                                 >
@@ -1134,7 +1134,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
             !event?.verified && (
               <Card className="border-dashed border-2 border-gray-300">
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <div className="w-16 h-16  rounded-full flex items-center justify-center mb-4">
                     <Eye className="h-8 w-8 text-gray-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-700 mb-2">
@@ -1267,7 +1267,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
                   {attendeesSearchResult.map((item, index) => (
                     <div
                       key={index}
-                      className="p-2 hover:bg-gray-100 cursor-pointer"
+                      className="p-2 hover: cursor-pointer"
                       onClick={() => {
                         setAttendee({
                           name: item.name,
@@ -1317,7 +1317,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
             </div>
 
             {/* Host Farmer Checkbox */}
-            <div className="flex items-center space-x-2 p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center space-x-2 p-4  rounded-lg">
               <input
                 id="farmer_verify"
                 type="checkbox"
@@ -1461,7 +1461,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
               <Button
                 variant="outline"
                 size="icon"
-                className="absolute top-4 right-4 bg-white hover:bg-gray-100"
+                className="absolute top-4 right-4 bg-white hover:"
                 onClick={() => setSelectedEventImage(null)}
               >
                 <X className="h-4 w-4" />
