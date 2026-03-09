@@ -268,11 +268,10 @@ const Toll = () => {
 
     const matchesDate =
       !(selectedDateRange?.from && selectedDateRange?.to) ||
-      (dayjs(toll.date).isAfter(
-        dayjs(selectedDateRange.from).subtract(1, 'day'),
-      ) &&
-        dayjs(toll.date).isBefore(dayjs(selectedDateRange.to).add(1, 'day')));
-
+      (dayjs(toll?.date).valueOf() >=
+        dayjs(selectedDateRange.from).startOf('day').valueOf() &&
+        dayjs(toll?.date).valueOf() <=
+          dayjs(selectedDateRange.to).endOf('day').valueOf());
     return matchesSearch && matchesDate;
   });
 

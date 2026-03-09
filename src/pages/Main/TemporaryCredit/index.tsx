@@ -227,13 +227,10 @@ const TemporaryCredit = () => {
 
     const matchesDate =
       !(selectedDateRange?.from && selectedDateRange?.to) ||
-      (dayjs(item?.createdAt).isAfter(
-        dayjs(selectedDateRange.from).subtract(1, 'day'),
-      ) &&
-        dayjs(item?.createdAt).isBefore(
-          dayjs(selectedDateRange.to).add(1, 'day'),
-        ));
-
+      (dayjs(item?.date).valueOf() >=
+        dayjs(selectedDateRange.from).startOf('day').valueOf() &&
+        dayjs(item?.date).valueOf() <=
+          dayjs(selectedDateRange.to).endOf('day').valueOf());
     return matchesSearch && matchesDate;
   });
 

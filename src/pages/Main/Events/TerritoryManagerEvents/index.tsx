@@ -480,13 +480,10 @@ const TerritoryManagerEvents = () => {
 
     const matchesDate =
       !(selectedDateRange?.from && selectedDateRange?.to) ||
-      (dayjs(item.date_begin).isAfter(
-        dayjs(selectedDateRange.from).subtract(1, 'day'),
-      ) &&
-        dayjs(item.date_begin).isBefore(
-          dayjs(selectedDateRange.to).add(1, 'day'),
-        ));
-
+      (dayjs(item?.date).valueOf() >=
+        dayjs(selectedDateRange.from).startOf('day').valueOf() &&
+        dayjs(item?.date).valueOf() <=
+          dayjs(selectedDateRange.to).endOf('day').valueOf());
     return matchesSearch && matchesDate;
   };
 
