@@ -182,7 +182,9 @@ const GenerateReport = () => {
           code === 'bm_product_sale_report' ||
           code === 'bm_product_ledger_summary_report' ||
           code === 'fpl_sale_report' ||
-          code === 'sale_analysis_report') &&
+          code === 'sale_analysis_report' ||
+          code === 'credit_limit_report' ||
+          code === 'tcl_status_report') &&
         isRegionalManager &&
         key === 'territory_ids'
       ) {
@@ -240,7 +242,9 @@ const GenerateReport = () => {
       code === 'bm_product_sale_report' ||
       code === 'bm_product_ledger_summary_report' ||
       code === 'fpl_sale_report' ||
-      code === 'sale_analysis_report'
+      code === 'sale_analysis_report' ||
+      code === 'credit_limit_report' ||
+      code === 'tcl_status_report'
     ) {
       delete data.region_id;
       if (isRegionalManager) {
