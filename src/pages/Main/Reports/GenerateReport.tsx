@@ -97,6 +97,30 @@ const GenerateReport = () => {
   }, [fields, dynamicFields?.policy_id]);
 
   useEffect(() => {
+    if (fields?.includes('product_id') && !dynamicFields?.policy_id) {
+      callApi(
+        'GET',
+        `/products/get/without-policy`,
+        {},
+        (res) => {
+          setProductsData(
+            res.products.map((product: { name: string; id: string }) => ({
+              label: product.name,
+              value: product.id,
+            })),
+          );
+        },
+        () => {
+          setProductsData([]);
+          toast.error('Error fetching products', {
+            description: 'Please try again',
+          });
+        },
+      );
+    }
+  }, [fields, dynamicFields?.policy_id]);
+
+  useEffect(() => {
     if (dynamicFields?.territory_id) {
       callApi(
         'GET',
@@ -119,7 +143,7 @@ const GenerateReport = () => {
       );
     }
 
-    if (dynamicFields?.policy_id === '') {
+    if (dynamicFields?.policy_id === '' || !dynamicFields?.policy_ids) {
       callApi(
         'GET',
         `/policy`,
@@ -140,7 +164,11 @@ const GenerateReport = () => {
         },
       );
     }
-  }, [dynamicFields?.territory_id, dynamicFields?.policy_id]);
+  }, [
+    dynamicFields?.territory_id,
+    dynamicFields?.policy_id,
+    dynamicFields?.policy_ids,
+  ]);
 
   const handleGenerateReport = () => {
     const missingFields = Object.keys(dynamicFields || {})?.filter((key) => {
@@ -150,7 +178,11 @@ const GenerateReport = () => {
       // Special case for category_wise_sale_analysis_report: territory_ids is optional for Regional Manager
       if (
         (code === 'category_wise_sale_analysis_report' ||
-          code === 'collection_commission_report') &&
+          code === 'collection_commission_report' ||
+          code === 'bm_product_sale_report' ||
+          code === 'bm_product_ledger_summary_report' ||
+          code === 'fpl_sale_report' ||
+          code === 'sale_analysis_report') &&
         isRegionalManager &&
         key === 'territory_ids'
       ) {
@@ -204,7 +236,11 @@ const GenerateReport = () => {
 
     if (
       code === 'category_wise_sale_analysis_report' ||
-      code === 'collection_commission_report'
+      code === 'collection_commission_report' ||
+      code === 'bm_product_sale_report' ||
+      code === 'bm_product_ledger_summary_report' ||
+      code === 'fpl_sale_report' ||
+      code === 'sale_analysis_report'
     ) {
       delete data.region_id;
       if (isRegionalManager) {
@@ -547,6 +583,66 @@ const GenerateReport = () => {
                 )}
               </div>
             )}
+            {fields.includes('policy_ids') && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Policies <span className="text-red-500">*</span>
+                </label>
+                <Select
+                  onValueChange={(value) => {
+                    const current = dynamicFields?.policy_ids || [];
+                    const exists = current.includes(value);
+                    const newValue = exists
+                      ? current.filter((id) => id !== value)
+                      : [...current, value];
+                    setDynamicFields({
+                      ...dynamicFields,
+                      policy_ids: newValue,
+                    });
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        dynamicFields?.policy_ids?.length > 0
+                          ? `${dynamicFields.policy_ids.length} policies selected`
+                          : 'Select policies'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {policy.map((pol) => (
+                      <SelectItem key={pol.value} value={pol.value}>
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={dynamicFields?.policy_ids?.includes(
+                              pol.value,
+                            )}
+                            className="pointer-events-none"
+                          />
+                          {pol.label}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {dynamicFields?.policy_ids?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {dynamicFields.policy_ids.map((id) => {
+                      const pol = policy.find((t) => t.value === id);
+                      return (
+                        <span
+                          key={id}
+                          className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
+                        >
+                          {pol?.label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {fields.includes('partner_id') && (
               <div>
@@ -732,6 +828,50 @@ const GenerateReport = () => {
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
                     Top Bottom
+                  </label>
+                </div>
+              </div>
+            )}
+            {fields.includes('with_category') && (
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="with_category"
+                    checked={dynamicFields?.with_category || false}
+                    onCheckedChange={(checked) =>
+                      setDynamicFields({
+                        ...dynamicFields,
+                        with_category: checked,
+                      })
+                    }
+                  />
+                  <label
+                    htmlFor="is_top_bottom"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    With Category
+                  </label>
+                </div>
+              </div>
+            )}
+            {fields.includes('is_yoy') && (
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="is_yoy"
+                    checked={dynamicFields?.is_yoy || false}
+                    onCheckedChange={(checked) =>
+                      setDynamicFields({
+                        ...dynamicFields,
+                        is_yoy: checked,
+                      })
+                    }
+                  />
+                  <label
+                    htmlFor="is_top_bottom"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Last Year Comparison
                   </label>
                 </div>
               </div>

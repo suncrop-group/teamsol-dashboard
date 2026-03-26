@@ -15,7 +15,7 @@ import { Eye, MoreVertical, X } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import { callApi, callServerAPI } from '@/api';
-import { parseCustomDate, priceFormatter } from '@/utils';
+import { priceFormatter } from '@/utils';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import { Loader2 } from 'lucide-react';
 import {
@@ -234,6 +234,7 @@ const EventDetailsArea = () => {
     event_stage: { name: '' },
     rsmAttended: false,
     images: [],
+    createdAt: null,
   });
   const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
   const [isChecklistDialogOpen, setIsChecklistDialogOpen] = useState(false);
@@ -441,8 +442,9 @@ const EventDetailsArea = () => {
     );
   };
 
-  const endDate = parseCustomDate(event?.date_end);
-  const canMakeAction = dayjs().isBefore(dayjs(endDate).add(4, 'day'));
+  const canVerifyEvent = dayjs().isBefore(
+    dayjs(event?.createdAt).add(5, 'day'),
+  );
 
   return (
     <div className="container">
@@ -468,14 +470,14 @@ const EventDetailsArea = () => {
                   <DropdownMenuContent className="w-56" align="end">
                     <DropdownMenuItem
                       disabled={
-                        !canMakeAction ||
+                        !canVerifyEvent ||
                         event?.event_stage?.name
                           ?.toLowerCase()
                           ?.includes('cancel') ||
                         event?.verified
                       }
                       onClick={() => {
-                        if (!canMakeAction) {
+                        if (!canVerifyEvent) {
                           toast.error(
                             "Actions can only be performed at least four days after the event's end date, and the event has not been cancelled.",
                             {

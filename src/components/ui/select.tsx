@@ -1,6 +1,6 @@
 import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, SearchIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -52,8 +52,42 @@ function SelectContent({
   className,
   children,
   position = "popper",
+  searchable = true,
+  searchPlaceholder = "Search...",
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+}: React.ComponentProps<typeof SelectPrimitive.Content> & {
+  searchable?: boolean
+  searchPlaceholder?: string
+}) {
+  const [search, setSearch] = React.useState("")
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const viewportRef = React.useRef<HTMLDivElement>(null)
+
+  // Focus input when content opens
+  React.useEffect(() => {
+    if (searchable && inputRef.current) {
+      // Small delay to let radix finish opening animation
+      const timer = setTimeout(() => inputRef.current?.focus(), 50)
+      return () => clearTimeout(timer)
+    }
+  }, [searchable])
+
+  // Filter items by hiding non-matching ones via data attribute
+  React.useEffect(() => {
+    if (!viewportRef.current) return
+    const items = viewportRef.current.querySelectorAll('[data-slot="select-item"]')
+    const query = search.toLowerCase().trim()
+
+    items.forEach((item) => {
+      const text = item.textContent?.toLowerCase() || ""
+      if (!query || text.includes(query)) {
+        ;(item as HTMLElement).style.display = ""
+      } else {
+        ;(item as HTMLElement).style.display = "none"
+      }
+    })
+  }, [search])
+
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -68,7 +102,24 @@ function SelectContent({
         {...props}
       >
         <SelectScrollUpButton />
+        {searchable && (
+          <div className="flex items-center gap-2 border-b px-3 py-2 sticky top-0 bg-popover z-10">
+            <SearchIcon className="size-4 shrink-0 opacity-50" />
+            <input
+              ref={inputRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="flex h-7 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              // Prevent radix select from capturing key events on the search input
+              onKeyDown={(e) => {
+                e.stopPropagation()
+              }}
+            />
+          </div>
+        )}
         <SelectPrimitive.Viewport
+          ref={viewportRef}
           className={cn(
             "p-1",
             position === "popper" &&

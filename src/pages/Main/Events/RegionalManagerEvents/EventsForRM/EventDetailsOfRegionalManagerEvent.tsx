@@ -237,6 +237,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
     event_stage: { name: '' },
     rsmAttended: false,
     images: [],
+    createdAt: null,
   });
 
   const [isAddAttendeeOpen, setIsAddAttendeeOpen] = useState(false);
@@ -747,6 +748,9 @@ const EventDetailsOfRegionalManagerEvent = () => {
 
   const endDate = parseCustomDate(event?.date_end);
   const canMakeAction = dayjs().isBefore(dayjs(endDate).add(4, 'day'));
+  const canVerifyEvent = dayjs().isBefore(
+    dayjs(event?.createdAt).add(5, 'day'),
+  );
 
   return (
     <div className="container mx-auto p-4 max-w-3xl">
@@ -870,7 +874,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
                         });
                         return;
                       }
-                      if (!canMakeAction) return;
+                      if (!canVerifyEvent) return;
                       setIsVerifyEventOpen(true);
                     }}
                     disabled={
@@ -883,7 +887,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
                         ?.includes('cancel') ||
                       event?.verified ||
                       event?.event_stage?.name?.includes('complete') ||
-                      !canMakeAction
+                      !canVerifyEvent
                     }
                   >
                     {event?.event_stage?.name?.toLowerCase()?.includes('cancel')
