@@ -47,6 +47,7 @@ type AccountTile = {
   fields?: string[];
   api_url?: string;
   optionalFields?: string[];
+  regionOrTerritory?: boolean;
 };
 
 type AccountTiles = AccountTile[];

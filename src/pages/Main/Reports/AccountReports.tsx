@@ -14,8 +14,8 @@ const AccountingReports = () => {
       ?.map((item) =>
         accountTiles.find(
           (tile) =>
-            tile?.code?.toLowerCase() === item?.module?.code.toLowerCase()
-        )
+            tile?.code?.toLowerCase() === item?.module?.code.toLowerCase(),
+        ),
       )
       .filter(Boolean) || [];
 
@@ -48,6 +48,7 @@ const AccountingReports = () => {
                         fields: item.fields,
                         api_url: item.api_url,
                         optionalFields: item.optionalFields,
+                        regionOrTerritory: item.regionOrTerritory,
                       },
                     });
                   }

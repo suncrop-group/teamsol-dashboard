@@ -192,13 +192,13 @@ export const accountTiles: AccountTiles = [
     fields: [
       'date_to',
       'date_from',
-      'region_id',
+      'region_ids',
       'sort_column',
       'territory_ids',
     ],
     optionalFields: ['region_id'],
     code: 'bm_account_status_area_wise_report',
-    api_url: 'accountstatus/areawise/report',
+    api_url: 'bm/account-status-area-wise/report',
   },
   {
     title: 'Account Status Policy Wise Report',
@@ -207,13 +207,13 @@ export const accountTiles: AccountTiles = [
     fields: [
       'date_to',
       'date_from',
-      'region_id',
+      'region_ids',
       'sort_column',
       'policy_ids',
       'territory_ids',
     ],
     code: 'bm_account_status_policy_wise_report',
-    api_url: 'accountstatus/policywise/report',
+    api_url: 'bm/account-status-policy-wise/report',
   },
 
   {
@@ -229,6 +229,7 @@ export const accountTiles: AccountTiles = [
     ],
     code: 'credit_limit_report',
     optionalFields: ['territory_id'],
+    regionOrTerritory: true,
     api_url: 'bm/credit-limit/report',
   },
   {
@@ -241,8 +242,11 @@ export const accountTiles: AccountTiles = [
       'region_ids',
       'territory_id',
       'policy_ids',
+      'is_all_policy',
     ],
-    optionalFields: ['territory_id'],
+    optionalFields: ['is_all_policy', 'policy_ids'],
+    regionOrTerritory: true,
+
     code: 'tcl_status_report',
     api_url: 'bm/tcl-status/report',
   },
