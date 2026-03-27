@@ -228,7 +228,6 @@ export const accountTiles: AccountTiles = [
       'policy_ids',
     ],
     code: 'credit_limit_report',
-    optionalFields: ['territory_id'],
     regionOrTerritory: true,
     api_url: 'bm/credit-limit/report',
   },

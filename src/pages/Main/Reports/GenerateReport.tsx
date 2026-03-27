@@ -224,6 +224,29 @@ const GenerateReport = () => {
       return;
     }
 
+    // ── region + territory coexistence check ──────────────────────────────
+    // When the form has both region and territory fields, we need at least
+    // one side to have a value before calling the API.
+    const hasRegionField =
+      fields.includes('region_id') || fields.includes('region_ids');
+    const hasTerritoryField =
+      fields.includes('territory_id') || fields.includes('territory_ids');
+
+    if (hasRegionField && hasTerritoryField) {
+      const territorySelected =
+        (dynamicFields?.territory_ids && dynamicFields.territory_ids.length > 0) ||
+        (dynamicFields?.territory_id && dynamicFields.territory_id !== '');
+      const regionAvailable = !!region?.id;
+
+      if (!territorySelected && !regionAvailable) {
+        toast.error('Territory required', {
+          description: 'Please select a territory to generate this report.',
+        });
+        setLoading(false);
+        return;
+      }
+    }
+
     const onSuccess = async (res) => {
       const pdfBase64 = `data:application/pdf;base64,${res.data}`;
       setReport(pdfBase64);
@@ -294,7 +317,7 @@ const GenerateReport = () => {
     }
 
     // ── regionOrTerritory: send only the chosen side ─────────────────────
-    if (regionOrTerritory) {
+    if (regionOrTerritory && isRegionalManager) {
       const hasTerritory =
         (data.territory_ids && data.territory_ids.length > 0) ||
         (data.territory_id && data.territory_id !== '');
