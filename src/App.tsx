@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectIsAuthenticated, selectUser } from './redux/slices/AuthSlice';
 import SignIn from './pages/SignIn';
-import Home from './pages/Main/Home';
+
 import Layout from './layouts/Sidebar';
 import ProfileSettings from './pages/Main/Profile';
 import Sales from './pages/Main/Sales';
@@ -52,6 +52,7 @@ import {
   selectMaintenanceMessage,
   selectMaintenanceUntil,
 } from './redux/slices/SystemSlice';
+import Home from './pages/Main/Home';
 
 const ProtectedRoute = ({ children }) => {
   const isAuth = useSelector(selectIsAuthenticated);
@@ -170,6 +171,7 @@ function App() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/notifications"
         element={
