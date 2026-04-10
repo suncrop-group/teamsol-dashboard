@@ -132,7 +132,7 @@ const ArcGauge = ({ pct }: { pct: number }) => {
         />
       </svg>
       <div className="absolute -bottom-2 flex flex-col items-center">
-        <span className="text-4xl font-extrabold text-slate-700">
+        <span className="text-3xl font-extrabold text-slate-700">
           <AnimatedNumber value={pct} />%
         </span>
         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
@@ -147,10 +147,22 @@ const TargetWidgetV4 = ({
   target,
   achievement,
   loading,
+  user,
 }: {
   target: number;
   achievement: number;
   loading: boolean;
+  user: {
+    is_territory_manager: boolean;
+    territory_ids: number[];
+    territories: {
+      id: number;
+      name: string;
+    }[];
+    region: {
+      name: string;
+    };
+  };
 }) => {
   if (loading)
     return (
@@ -179,11 +191,20 @@ const TargetWidgetV4 = ({
 
       <div className="flex-1 w-full space-y-8 z-10">
         <div>
-          <h2 className="text-4xl font-black text-slate-800 tracking-tight leading-tight">
+          <h2 className="text-3xl font-black text-slate-800 tracking-tight leading-tight">
             Target vs Achievement
           </h2>
-          <p className="text-slate-500 mt-3 font-medium text-lg">
-            Your region is currently at{' '}
+          <p className="text-slate-500 mt-3 font-medium text-base">
+            Your {user?.is_territory_manager ? 'territory' : 'region'}{' '}
+            {user?.is_territory_manager
+              ? `${
+                  user?.territories?.find(
+                    (t: { id: number; name: string }) =>
+                      t.id === user.territory_ids[0],
+                  )?.name
+                } `
+              : `${user?.region?.name} `}
+            is currently at{' '}
             <span className={`font-bold ${colorClass}`}>
               <AnimatedNumber value={pct} />%
             </span>{' '}
@@ -206,7 +227,7 @@ const TargetWidgetV4 = ({
                 Target
               </p>
             </div>
-            <p className="text-3xl font-extrabold text-slate-800 mt-4 tabular-nums tracking-tight">
+            <p className="text-2xl font-extrabold text-slate-800 mt-4 tabular-nums tracking-tight">
               <AnimatedNumber value={target} formatter={fmt} />
             </p>
           </motion.div>
@@ -225,7 +246,7 @@ const TargetWidgetV4 = ({
               </p>
             </div>
             <p
-              className={`text-3xl font-extrabold mt-4 tabular-nums tracking-tight ${colorClass}`}
+              className={`text-2xl font-extrabold mt-4 tabular-nums tracking-tight ${colorClass}`}
             >
               <AnimatedNumber value={achievement} formatter={fmt} />
             </p>
@@ -280,8 +301,8 @@ const Home = () => {
       'GET',
       '/others/target-months-and-years',
       null,
-      (configResp: { year_id: number; month_ids: number[] }) => {
-        const { year_id, month_ids } = configResp;
+      (configResp) => {
+        const { year_id, month_ids } = configResp.data || configResp;
 
         const data: {
           company_id: number;
@@ -298,11 +319,10 @@ const Home = () => {
         };
 
         if (user.is_region_manager) {
-          delete data.region_id;
-        }
-
-        if (user.is_territory_manager) {
           delete data.territory_id;
+        }
+        if (user.is_territory_manager) {
+          delete data.region_id;
         }
 
         console.log({ data });
@@ -391,6 +411,8 @@ const Home = () => {
     // eslint-disable-next-line
   }, [user?.permissions]);
 
+  console.log({ user });
+
   return (
     <div className="min-h-screen bg-white p-4 sm:p-8 lg:p-12 font-sans selection:bg-blue-100">
       <div className="max-w-7xl mx-auto space-y-16">
@@ -402,7 +424,7 @@ const Home = () => {
           className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 px-4"
         >
           <div>
-            <h1 className="text-5xl font-black text-slate-800 tracking-tighter">
+            <h1 className="text-4xl font-black text-slate-800 tracking-tighter">
               Welcome,{' '}
               <span className="text-slate-400">
                 {user?.name?.split(' ')[0] || 'User'}
@@ -426,13 +448,14 @@ const Home = () => {
             target={targetData.target}
             achievement={targetData.achievement}
             loading={targetLoading}
+            user={user}
           />
         </section>
 
         {/* Modules */}
         <section>
           <div className="flex items-center justify-between mb-8 px-4">
-            <h3 className="text-2xl font-black text-slate-800 tracking-tight">
+            <h3 className="text-xl font-black text-slate-800 tracking-tight">
               Applications
             </h3>
             <span className="px-4 py-2 rounded-full bg-white shadow-[inset_4px_4px_8px_#cbd5e1,inset_-4px_-4px_8px_#ffffff] text-slate-500 font-bold text-sm">
@@ -447,7 +470,7 @@ const Home = () => {
           ) : modList.length === 0 ? (
             <div className="w-full h-64 rounded-[3rem] bg-white flex flex-col items-center justify-center shadow-[inset_15px_15px_30px_#cbd5e1,inset_-15px_-15px_30px_#ffffff]">
               <Grid3x3 className="w-12 h-12 text-slate-300 mb-4" />
-              <p className="text-slate-500 font-bold text-lg">
+              <p className="text-slate-500 font-bold text-base">
                 No Applications Configured
               </p>
             </div>
