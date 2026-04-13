@@ -144,13 +144,16 @@ const ArcGauge = ({ pct }: { pct: number }) => {
 };
 
 const TargetWidgetV4 = ({
-  target,
-  achievement,
+  data,
   loading,
   user,
 }: {
-  target: number;
-  achievement: number;
+  data: {
+    m_target: number;
+    m_achievement: number;
+    y_target: number;
+    y_achievement: number;
+  };
   loading: boolean;
   user: {
     is_territory_manager: boolean;
@@ -164,12 +167,18 @@ const TargetWidgetV4 = ({
     };
   };
 }) => {
+  const [view, setView] = useState<'monthly' | 'yearly'>('yearly');
+
   if (loading)
     return (
       <div className="w-full h-80 rounded-[3rem] bg-white flex items-center justify-center shadow-[15px_15px_30px_#d1d5db,_-15px_-15px_30px_#ffffff]">
         <Loader2 className="w-12 h-12 text-slate-400 animate-spin" />
       </div>
     );
+
+  const target = view === 'monthly' ? data.m_target : data.y_target;
+  const achievement =
+    view === 'monthly' ? data.m_achievement : data.y_achievement;
 
   const pct = target > 0 ? (achievement / target) * 100 : 0;
   const colorClass =
@@ -190,10 +199,39 @@ const TargetWidgetV4 = ({
       <div className="absolute -top-32 -left-32 w-64 h-64 bg-white/60 blur-3xl rounded-full pointer-events-none"></div>
 
       <div className="flex-1 w-full space-y-8 z-10">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <h2 className="text-3xl font-black text-slate-800 tracking-tight leading-tight">
+              Target vs Achievement
+            </h2>
+          </div>
+
+          {/* Premium Toggle */}
+          <div className="p-1.5 bg-slate-100/50 rounded-2xl flex items-center gap-1 shadow-inner border border-slate-200/50">
+            <button
+              onClick={() => setView('monthly')}
+              className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${
+                view === 'monthly'
+                  ? 'bg-white text-slate-800 shadow-sm scale-[1.02]'
+                  : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setView('yearly')}
+              className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${
+                view === 'yearly'
+                  ? 'bg-white text-slate-800 shadow-sm scale-[1.02]'
+                  : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              Yearly
+            </button>
+          </div>
+        </div>
+
         <div>
-          <h2 className="text-3xl font-black text-slate-800 tracking-tight leading-tight">
-            Target vs Achievement
-          </h2>
           <p className="text-slate-500 mt-3 font-medium text-base">
             Your {user?.is_territory_manager ? 'territory' : 'region'}{' '}
             {user?.is_territory_manager
@@ -208,7 +246,7 @@ const TargetWidgetV4 = ({
             <span className={`font-bold ${colorClass}`}>
               <AnimatedNumber value={pct} />%
             </span>{' '}
-            of its overall goal.
+            of its <span className="lowercase">{view}</span> goal.
           </p>
         </div>
 
@@ -282,11 +320,15 @@ const Home = () => {
   >([]);
   const navigate = useNavigate();
   const [targetData, setTargetData] = useState<{
-    target: number;
-    achievement: number;
+    m_target: number;
+    m_achievement: number;
+    y_target: number;
+    y_achievement: number;
   }>({
-    target: 0,
-    achievement: 0,
+    m_target: 0,
+    m_achievement: 0,
+    y_target: 0,
+    y_achievement: 0,
   });
   const [targetLoading, setTargetLoading] = useState(false);
 
@@ -336,14 +378,18 @@ const Home = () => {
           },
           (r: {
             data: {
-              target: number;
-              achievement: number;
+              m_target: number;
+              m_achievement: number;
+              y_target: number;
+              y_achievement: number;
             };
           }) => {
             setTargetLoading(false);
             setTargetData({
-              target: r.data.target,
-              achievement: r.data.achievement,
+              m_target: r.data.m_target,
+              m_achievement: r.data.m_achievement,
+              y_target: r.data.y_target,
+              y_achievement: r.data.y_achievement,
             });
           },
           (e) => {
@@ -445,8 +491,7 @@ const Home = () => {
         {/* Big Widget */}
         <section>
           <TargetWidgetV4
-            target={targetData.target}
-            achievement={targetData.achievement}
+            data={targetData}
             loading={targetLoading}
             user={user}
           />
