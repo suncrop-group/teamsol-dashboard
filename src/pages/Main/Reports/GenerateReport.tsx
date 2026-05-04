@@ -44,14 +44,18 @@ const GenerateReport = () => {
   const navigate = useNavigate();
   const user = useSelector(selectUser);
   const isRegionalManager = user?.is_region_manager;
+  const [yearMonthData, setYearMonthData] = useState({
+    months: [],
+    years: [],
+  });
 
-  console.log({ regionOrTerritory });
+  console.log({ yearMonthData });
 
   useEffect(() => {
     if (!fields) return;
     const dynFields = fields
       .map((field) => ({
-        [field]: field === 'territory_ids' ? [] : '',
+        [field]: ['territory_ids', 'month_ids', 'policy_ids', 'region_ids'].includes(field) ? [] : '',
         date_from: dayjs(new Date()).format('DD-MM-YYYY'),
         date_to: dayjs(new Date()).format('DD-MM-YYYY'),
         is_yoy: false,
@@ -175,6 +179,59 @@ const GenerateReport = () => {
     dynamicFields?.policy_ids,
   ]);
 
+  useEffect(() => {
+    if (fields?.includes('month_ids') || fields?.includes('year_id')) {
+      callApi(
+        'GET',
+        '/others/month-and-year',
+        {},
+        (res) => {
+          const months = res?.data?.months || [];
+          const rawYears = res?.data?.years || [];
+
+          // Filter duplicate years by name, keeping the last occurrence
+          const uniqueYearsMap = new Map();
+          rawYears.forEach((y: { _id: string; id: number; name: string }) => {
+            uniqueYearsMap.set(y.name, y);
+          });
+          const years = Array.from(uniqueYearsMap.values());
+          
+          setYearMonthData({
+            months,
+            years,
+          });
+
+          const currentMonth = dayjs().month() + 1;
+          const currentYearStr = dayjs().year().toString();
+
+          let defaultMonthIds: number[] = [];
+          if (fields.includes('month_ids') && months.length > 0) {
+            defaultMonthIds = months
+              .filter((m: { _id: string; id: number; name: string }) => m.id <= currentMonth)
+              .map((m: { _id: string; id: number; name: string }) => m.id);
+          }
+
+          let defaultYearId: number | '' = '';
+          if (fields.includes('year_id') && years.length > 0) {
+            const matchedYears = years.filter((y: { _id: string; id: number; name: string }) => y.name === currentYearStr);
+            if (matchedYears.length > 0) {
+              defaultYearId = matchedYears[matchedYears.length - 1].id;
+            } else {
+              defaultYearId = years[years.length - 1].id;
+            }
+          }
+
+          setDynamicFields((prev: Record<string, unknown>) => ({
+            ...prev,
+            ...(fields.includes('month_ids') && { month_ids: defaultMonthIds }),
+            ...(fields.includes('year_id') && { year_id: defaultYearId }),
+          }));
+        },
+        () => {},
+      );
+    }
+  }, [fields]);
+
   const handleGenerateReport = () => {
     const missingFields = Object.keys(dynamicFields || {})?.filter((key) => {
       const value = dynamicFields[key];
@@ -192,6 +249,7 @@ const GenerateReport = () => {
           code === 'tcl_status_report' ||
           code === 'account_status_policy_report' ||
           code === 'bm_account_status_area_wise_report' ||
+          code === 'target_vs_achievement_report' ||
           code === 'bm_account_status_policy_wise_report') &&
         isRegionalManager &&
         key === 'territory_ids'
@@ -234,7 +292,8 @@ const GenerateReport = () => {
 
     if (hasRegionField && hasTerritoryField) {
       const territorySelected =
-        (dynamicFields?.territory_ids && dynamicFields.territory_ids.length > 0) ||
+        (dynamicFields?.territory_ids &&
+          dynamicFields.territory_ids.length > 0) ||
         (dynamicFields?.territory_id && dynamicFields.territory_id !== '');
       const regionAvailable = !!region?.id;
 
@@ -286,6 +345,7 @@ const GenerateReport = () => {
       code === 'tcl_status_report' ||
       code === 'account_status_policy_report' ||
       code === 'bm_account_status_area_wise_report' ||
+      code === 'target_vs_achievement_report' ||
       code === 'bm_account_status_policy_wise_report'
     ) {
       delete data.region_id;
@@ -578,6 +638,8 @@ const GenerateReport = () => {
             fields.includes('policy_id') ||
             fields.includes('product_id') ||
             fields.includes('sort_column') ||
+            fields.includes('month_ids') ||
+            fields.includes('year_id') ||
             fields.includes('is_summary')) && (
             <Card>
               <CardHeader className="">
@@ -940,6 +1002,113 @@ const GenerateReport = () => {
                         <SelectContent>
                           <SelectItem value="true">Summary</SelectItem>
                           <SelectItem value="false">Detailed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {fields.includes('month_ids') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Months <span className="text-red-500">*</span>
+                      </label>
+                      <Select
+                        onValueChange={(value) => {
+                          const numValue = Number(value);
+                          const current = dynamicFields?.month_ids || [];
+                          const exists = current.includes(numValue);
+                          const newValue = exists
+                            ? current.filter((id: number) => id !== numValue)
+                            : [...current, numValue];
+                          setDynamicFields({
+                            ...dynamicFields,
+                            month_ids: newValue,
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue
+                            placeholder={
+                              dynamicFields?.month_ids?.length > 0
+                                ? `${dynamicFields.month_ids.length} months selected`
+                                : 'Select months'
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {yearMonthData.months.map((month: { _id: string; id: number; name: string }) => (
+                            <SelectItem key={month.id} value={month.id.toString()}>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  checked={dynamicFields?.month_ids?.includes(
+                                    month.id,
+                                  )}
+                                  className="pointer-events-none"
+                                />
+                                {month.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {dynamicFields?.month_ids?.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {dynamicFields.month_ids.map((id: number) => {
+                            const month = yearMonthData.months.find(
+                              (m: { _id: string; id: number; name: string }) => m.id === id,
+                            );
+                            return (
+                              <span
+                                key={id}
+                                className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs font-medium pl-2.5 pr-1.5 py-1 rounded-full"
+                              >
+                                {month?.name}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDynamicFields({
+                                      ...dynamicFields,
+                                      month_ids: dynamicFields.month_ids.filter(
+                                        (i: number) => i !== id,
+                                      ),
+                                    })
+                                  }
+                                  className="hover:bg-blue-200 rounded-full p-0.5"
+                                  aria-label={`Remove ${month?.name}`}
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {fields.includes('year_id') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Year <span className="text-red-500">*</span>
+                      </label>
+                      <Select
+                        value={dynamicFields?.year_id?.toString() || ''}
+                        onValueChange={(value) =>
+                          setDynamicFields({
+                            ...dynamicFields,
+                            year_id: Number(value),
+                          })
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select year" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {yearMonthData.years.map((year: { _id: string; id: number; name: string }) => (
+                            <SelectItem key={year.id} value={year.id.toString()}>
+                              {year.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>

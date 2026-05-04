@@ -249,6 +249,15 @@ export const accountTiles: AccountTiles = [
     code: 'tcl_status_report',
     api_url: 'bm/tcl-status/report',
   },
+  {
+    title: 'Target Vs Achievement Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: ['region_ids', 'territory_ids', 'month_ids', 'year_id'],
+    regionOrTerritory: true,
+    code: 'target_vs_achievement_report',
+    api_url: 'bm/target-vs-achievement/report',
+  },
 ];
 
 export const collectionTiles: AccountTiles = [
