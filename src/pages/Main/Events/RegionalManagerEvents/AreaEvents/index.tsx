@@ -447,31 +447,63 @@ const AreaEvents = () => {
   >(undefined);
   const [toggleEventImages, setToggleEventImages] = useState<number[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    page: 1,
+    limit: 50,
+    totalPages: 0,
+  });
+  const [currentPage, setCurrentPage] = useState(1);
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const fetchSalesOrders = () => {
+  const fetchEvents = (page = 1) => {
     dispatch(resetProducts());
     const onSuccess = (response) => {
       setLoading(false);
-      response.data.sort(
-        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
-      );
       setEvents(response.data);
+      if (response.pagination) {
+        setPagination(response.pagination);
+      }
     };
     const onError = () => {
       setLoading(false);
       toast.error('Failed to fetch events', { description: 'Error' });
     };
     setLoading(true);
-    callApi('GET', '/events/region', null, onSuccess, onError);
+
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: '100',
+    });
+
+    if (searchQuery) params.append('search', searchQuery);
+    if (selectedDateRange?.from && selectedDateRange?.to) {
+      params.append('startDate', selectedDateRange.from.toISOString());
+      params.append('endDate', selectedDateRange.to.toISOString());
+    }
+
+    callApi(
+      'GET',
+      `/events/region?${params.toString()}`,
+      null,
+      onSuccess,
+      onError,
+    );
   };
 
   useEffect(() => {
-    fetchSalesOrders();
+    setCurrentPage(1);
+  }, [searchQuery, selectedDateRange]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchEvents(currentPage);
+    }, 500);
+
+    return () => clearTimeout(timer);
     // eslint-disable-next-line
-  }, []);
+  }, [currentPage, searchQuery, selectedDateRange]);
 
   const groupByTerritory = () => {
     const grouped = events.reduce((acc, event) => {
@@ -735,6 +767,62 @@ const AreaEvents = () => {
           {flattenedSections.every((section) => section.data.length === 0) && (
             <div className="text-center text-gray-500 mt-8">
               No event found under your region.
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between mt-8 bg-white p-4 rounded-lg border shadow-sm">
+              <div className="text-sm text-gray-500 font-medium">
+                Showing{' '}
+                <span className="text-gray-900 font-semibold">
+                  {(currentPage - 1) * pagination.limit + 1}
+                </span>{' '}
+                to{' '}
+                <span className="text-gray-900 font-semibold">
+                  {Math.min(currentPage * pagination.limit, pagination.total)}
+                </span>{' '}
+                of{' '}
+                <span className="text-gray-900 font-semibold">
+                  {pagination.total}
+                </span>{' '}
+                events
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.max(prev - 1, 1))
+                  }
+                  disabled={currentPage === 1 || loading}
+                  className="h-9 px-4"
+                >
+                  Previous
+                </Button>
+                <div className="flex items-center gap-1 mx-2">
+                  <span className="text-sm font-medium">Page</span>
+                  <span className="flex items-center justify-center bg-blue-50 text-blue-700 font-bold px-3 py-1 rounded-md text-sm border border-blue-100 min-w-[32px]">
+                    {currentPage}
+                  </span>
+                  <span className="text-sm font-medium">
+                    of {pagination.totalPages}
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCurrentPage((prev) =>
+                      Math.min(prev + 1, pagination.totalPages),
+                    )
+                  }
+                  disabled={currentPage === pagination.totalPages || loading}
+                  className="h-9 px-4"
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </div>
