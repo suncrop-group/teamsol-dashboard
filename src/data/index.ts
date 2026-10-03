@@ -239,7 +239,7 @@ export const accountTiles: AccountTiles = [
       'date_to',
       'date_from',
       'region_ids',
-      'territory_id',
+      'territory_ids',
       'policy_ids',
       'is_all_policy',
     ],
