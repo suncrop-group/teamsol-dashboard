@@ -41,6 +41,7 @@ const GenerateReport = () => {
   const [policy, setPolicy] = useState([]);
   const [sortColumn, setSortColumn] = useState('');
   const [productsData, setProductsData] = useState([]);
+  const [brands, setBrands] = useState([]);
   const navigate = useNavigate();
   const user = useSelector(selectUser);
   const isRegionalManager = user?.is_region_manager;
@@ -55,7 +56,7 @@ const GenerateReport = () => {
     if (!fields) return;
     const dynFields = fields
       .map((field) => ({
-        [field]: ['territory_ids', 'month_ids', 'policy_ids', 'region_ids'].includes(field) ? [] : '',
+        [field]: ['territory_ids', 'month_ids', 'policy_ids', 'region_ids', 'brand_ids'].includes(field) ? [] : '',
         date_from: dayjs(new Date()).format('DD-MM-YYYY'),
         date_to: dayjs(new Date()).format('DD-MM-YYYY'),
         is_yoy: false,
@@ -232,6 +233,32 @@ const GenerateReport = () => {
     }
   }, [fields]);
 
+  useEffect(() => {
+    if (fields?.includes('brand_ids')) {
+      callApi(
+        'GET',
+        '/brands',
+        {},
+        (res) => {
+          setBrands(
+            (res?.data?.brands || []).map(
+              (brand: { id: number; name: string }) => ({
+                label: brand.name,
+                value: brand.id,
+              }),
+            ),
+          );
+        },
+        () => {
+          setBrands([]);
+          toast.error('Error fetching brands', {
+            description: 'Please try again',
+          });
+        },
+      );
+    }
+  }, [fields]);
+
   const handleGenerateReport = () => {
     const missingFields = Object.keys(dynamicFields || {})?.filter((key) => {
       const value = dynamicFields[key];
@@ -250,6 +277,7 @@ const GenerateReport = () => {
           code === 'account_status_policy_report' ||
           code === 'bm_account_status_area_wise_report' ||
           code === 'target_vs_achievement_report' ||
+          code === 'target_vs_achievement_brand_report' ||
           code === 'bm_account_status_policy_wise_report') &&
         isRegionalManager &&
         key === 'territory_ids'
@@ -346,6 +374,7 @@ const GenerateReport = () => {
       code === 'account_status_policy_report' ||
       code === 'bm_account_status_area_wise_report' ||
       code === 'target_vs_achievement_report' ||
+      code === 'target_vs_achievement_brand_report' ||
       code === 'bm_account_status_policy_wise_report'
     ) {
       delete data.region_id;
@@ -638,6 +667,7 @@ const GenerateReport = () => {
             fields.includes('policy_id') ||
             fields.includes('product_id') ||
             fields.includes('sort_column') ||
+            fields.includes('brand_ids') ||
             fields.includes('month_ids') ||
             fields.includes('year_id') ||
             fields.includes('is_summary')) && (
@@ -1004,6 +1034,85 @@ const GenerateReport = () => {
                           <SelectItem value="false">Detailed</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                  )}
+
+                  {fields.includes('brand_ids') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Brands <span className="text-red-500">*</span>
+                      </label>
+                      <Select
+                        onValueChange={(value) => {
+                          const numValue = Number(value);
+                          const current = dynamicFields?.brand_ids || [];
+                          const exists = current.includes(numValue);
+                          const newValue = exists
+                            ? current.filter((id: number) => id !== numValue)
+                            : [...current, numValue];
+                          setDynamicFields({
+                            ...dynamicFields,
+                            brand_ids: newValue,
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue
+                            placeholder={
+                              dynamicFields?.brand_ids?.length > 0
+                                ? `${dynamicFields.brand_ids.length} brands selected`
+                                : 'Select brands'
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {brands.map((brand: { label: string; value: number }) => (
+                            <SelectItem key={brand.value} value={brand.value.toString()}>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  checked={dynamicFields?.brand_ids?.includes(
+                                    brand.value,
+                                  )}
+                                  className="pointer-events-none"
+                                />
+                                {brand.label}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {dynamicFields?.brand_ids?.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {dynamicFields.brand_ids.map((id: number) => {
+                            const brand = brands.find(
+                              (b: { label: string; value: number }) => b.value === id,
+                            );
+                            return (
+                              <span
+                                key={id}
+                                className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs font-medium pl-2.5 pr-1.5 py-1 rounded-full"
+                              >
+                                {brand?.label}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDynamicFields({
+                                      ...dynamicFields,
+                                      brand_ids: dynamicFields.brand_ids.filter(
+                                        (i: number) => i !== id,
+                                      ),
+                                    })
+                                  }
+                                  className="hover:bg-blue-200 rounded-full p-0.5"
+                                  aria-label={`Remove ${brand?.label}`}
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
 
