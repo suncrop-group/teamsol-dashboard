@@ -19,7 +19,7 @@ import { selectUser } from '@/redux/slices/AuthSlice';
 import { useNavigate } from 'react-router-dom';
 import { callApi } from '@/api';
 import {
-  Badge,
+  Box,
   Center,
   Container,
   Flex,
@@ -27,12 +27,11 @@ import {
   Image,
   Loader,
   Paper,
-  RingProgress,
   SegmentedControl,
+  SemiCircleProgress,
   SimpleGrid,
   Stack,
   Text,
-  ThemeIcon,
   Title,
   UnstyledButton,
 } from '@mantine/core';
@@ -59,21 +58,50 @@ const fmt = (v: number) => {
 const gaugeColor = (pct: number) =>
   pct >= 80 ? 'green' : pct >= 50 ? 'yellow' : 'red';
 
-// Ring gauge of the achieved percentage
+// The home page's look: large rounded surfaces that sit softly above the
+// page, with a wide diffuse shadow and no border. Each value adapts to the
+// colour scheme.
+const SURFACE = 'light-dark(var(--mantine-color-white), var(--mantine-color-dark-6))';
+const SHADOW_LG =
+  '0 30px 60px -20px light-dark(rgba(100, 116, 139, 0.35), rgba(0, 0, 0, 0.65))';
+const SHADOW_MD =
+  '0 16px 32px -14px light-dark(rgba(100, 116, 139, 0.32), rgba(0, 0, 0, 0.6))';
+const SHADOW_SM =
+  '0 8px 18px -8px light-dark(rgba(100, 116, 139, 0.35), rgba(0, 0, 0, 0.6))';
+// A recessed panel, for the gauge.
+const INSET =
+  'inset 0 2px 10px light-dark(rgba(100, 116, 139, 0.18), rgba(0, 0, 0, 0.5))';
+
+const raised = (shadow: string, radius: number) => ({
+  background: SURFACE,
+  boxShadow: shadow,
+  borderRadius: radius,
+});
+
+// Small all-caps caption, as used on tiles, pills and stat labels.
+const CAPTION = {
+  fw: 700,
+  tt: 'uppercase' as const,
+  lts: 1.5,
+};
+
+// Half-circle gauge of the achieved percentage
 const ArcGauge = ({ pct }: { pct: number }) => {
   return (
-    <RingProgress
-      size={220}
-      thickness={18}
-      roundCaps
+    <SemiCircleProgress
+      size={230}
+      thickness={16}
+      value={Math.min(Math.max(pct, 0), 100)}
+      filledSegmentColor={gaugeColor(pct)}
+      emptySegmentColor="light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4))"
       transitionDuration={600}
-      sections={[{ value: Math.min(pct, 100), color: gaugeColor(pct) }]}
+      labelPosition="bottom"
       label={
-        <Stack gap={0} align="center">
-          <Text fz={28} fw={800} lh={1.1}>
+        <Stack gap={2} align="center">
+          <Text fz={30} fw={800} lh={1}>
             {pct.toFixed(1)}%
           </Text>
-          <Text size="xs" fw={700} c="dimmed" tt="uppercase" lts={1}>
+          <Text size="xs" c="dimmed" {...CAPTION}>
             Achieved
           </Text>
         </Stack>
@@ -110,11 +138,11 @@ const TargetWidgetV4 = ({
 
   if (loading)
     return (
-      <Paper withBorder shadow="sm" radius="lg">
-        <Center h={320}>
+      <Box style={raised(SHADOW_LG, 40)}>
+        <Center h={360}>
           <Loader />
         </Center>
-      </Paper>
+      </Box>
     );
 
   const target = view === 'monthly' ? data.m_target : data.y_target;
@@ -124,31 +152,68 @@ const TargetWidgetV4 = ({
   const pct = target > 0 ? (achievement / target) * 100 : 0;
   const color = gaugeColor(pct);
 
+  const stat = (
+    icon: React.ReactNode,
+    label: string,
+    value: string,
+    valueColor?: string,
+  ) => (
+    <Box p="lg" style={raised(SHADOW_MD, 28)}>
+      <Group gap="sm">
+        <Center
+          w={44}
+          h={44}
+          c={valueColor || 'dimmed'}
+          style={raised(SHADOW_SM, 22)}
+        >
+          {icon}
+        </Center>
+        <Text size="sm" c="dimmed" {...CAPTION}>
+          {label}
+        </Text>
+      </Group>
+      <Text fz={26} fw={800} mt="md" c={valueColor}>
+        {value}
+      </Text>
+    </Box>
+  );
+
   return (
-    <Paper withBorder shadow="sm" radius="lg" p={{ base: 'md', sm: 'xl' }}>
+    <Box p={{ base: 'lg', sm: 40 }} style={raised(SHADOW_LG, 40)}>
       <Flex
         direction={{ base: 'column', lg: 'row' }}
         align="center"
         justify="space-between"
-        gap="xl"
+        gap={40}
       >
         <Stack gap="lg" flex={1} w="100%">
           <Group justify="space-between" align="center" gap="md">
-            <Title order={2} fz={{ base: 'h3', sm: 'h2' }}>
+            <Title order={2} fz={{ base: 24, sm: 30 }} fw={800} lts={-0.5}>
               Target vs Achievement
             </Title>
 
             <SegmentedControl
+              radius="xl"
+              size="sm"
               value={view}
               onChange={(value) => setView(value as 'monthly' | 'yearly')}
               data={[
                 { label: 'Monthly', value: 'monthly' },
                 { label: 'Yearly', value: 'yearly' },
               ]}
+              styles={{
+                label: {
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: 1.5,
+                  fontSize: 11,
+                  padding: '8px 22px',
+                },
+              }}
             />
           </Group>
 
-          <Text c="dimmed" fw={500}>
+          <Text c="dimmed" fw={500} fz="md">
             Your {user?.is_territory_manager ? 'territory' : 'region'}{' '}
             {user?.is_territory_manager
               ? `${
@@ -165,42 +230,28 @@ const TargetWidgetV4 = ({
             of its {view} goal.
           </Text>
 
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            <Paper withBorder radius="md" p="lg">
-              <Group gap="sm">
-                <ThemeIcon variant="light" color="gray" size={40} radius="xl">
-                  <Target size={20} />
-                </ThemeIcon>
-                <Text size="sm" fw={700} c="dimmed" tt="uppercase">
-                  Target
-                </Text>
-              </Group>
-              <Text fz={24} fw={800} mt="md">
-                {fmt(target)}
-              </Text>
-            </Paper>
-
-            <Paper withBorder radius="md" p="lg">
-              <Group gap="sm">
-                <ThemeIcon variant="light" color={color} size={40} radius="xl">
-                  <Award size={20} />
-                </ThemeIcon>
-                <Text size="sm" fw={700} c="dimmed" tt="uppercase">
-                  Achieved
-                </Text>
-              </Group>
-              <Text fz={24} fw={800} mt="md" c={color}>
-                {fmt(achievement)}
-              </Text>
-            </Paper>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg" mt="xs">
+            {stat(<Target size={20} />, 'Target', fmt(target))}
+            {stat(<Award size={20} />, 'Achieved', fmt(achievement), color)}
           </SimpleGrid>
         </Stack>
 
-        <Center w={{ base: '100%', lg: 320 }} style={{ flexShrink: 0 }}>
+        {/* The gauge sits in a recessed panel */}
+        <Center
+          w={{ base: '100%', lg: 340 }}
+          h={260}
+          style={{
+            flexShrink: 0,
+            borderRadius: 36,
+            boxShadow: INSET,
+            background:
+              'light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-7))',
+          }}
+        >
           <ArcGauge pct={pct} />
         </Center>
       </Flex>
-    </Paper>
+    </Box>
   );
 };
 
@@ -351,22 +402,29 @@ const Home = () => {
     // eslint-disable-next-line
   }, [user?.permissions]);
 
-  console.log({ user });
-
   return (
-    <Container size="xl" px={0}>
-      <Stack gap="xl">
+    <Container size="xl" px={0} py="md">
+      <Stack gap={48}>
         {/* Header */}
         <Group justify="space-between" align="center" gap="md">
-          <Title order={1} fz={{ base: 'h2', sm: 'h1' }}>
+          <Title order={1} fz={{ base: 28, sm: 38 }} fw={800} lts={-1}>
             Welcome,{' '}
             <Text span inherit c="dimmed">
               {user?.name?.split(' ')[0] || 'User'}
             </Text>
           </Title>
-          <Badge variant="dot" color="green" size="lg">
-            System Active
-          </Badge>
+          <Group gap="xs" px="lg" py={10} style={raised(SHADOW_SM, 999)}>
+            <Box
+              w={10}
+              h={10}
+              bg="green"
+              style={{ borderRadius: '50%' }}
+              aria-hidden
+            />
+            <Text size="xs" {...CAPTION}>
+              System Active
+            </Text>
+          </Group>
         </Group>
 
         {/* Big Widget */}
@@ -377,61 +435,64 @@ const Home = () => {
         />
 
         {/* Modules */}
-        <Stack gap="md">
+        <Stack gap="lg">
           <Group justify="space-between" align="center">
-            <Title order={3}>Applications</Title>
-            <Badge variant="light" color="gray" size="lg" tt="none">
+            <Title order={3} fw={800} lts={-0.3}>
+              Applications
+            </Title>
+            <Text
+              size="sm"
+              fw={700}
+              c="dimmed"
+              px="md"
+              py={6}
+              style={raised(SHADOW_SM, 999)}
+            >
               {modList.length} Connected
-            </Badge>
+            </Text>
           </Group>
 
           {loading ? (
-            <Paper withBorder shadow="sm" radius="lg">
+            <Box style={raised(SHADOW_MD, 32)}>
               <Center h={256}>
                 <Loader />
               </Center>
-            </Paper>
+            </Box>
           ) : modList.length === 0 ? (
-            <Paper withBorder shadow="sm" radius="lg">
+            <Box style={raised(SHADOW_MD, 32)}>
               <EmptyState
                 icon={<Grid3x3 size={32} />}
                 title="No Applications Configured"
               />
-            </Paper>
+            </Box>
           ) : (
-            <SimpleGrid cols={{ base: 2, md: 3, lg: 4 }} spacing="lg">
+            <SimpleGrid cols={{ base: 2, md: 3, lg: 4 }} spacing={{ base: 'md', sm: 'xl' }}>
               {modList.map((item, idx) => (
                 <UnstyledButton
                   key={idx}
                   onClick={() => item.path && navigate(item.path)}
+                  h="100%"
                 >
                   <Paper
-                    withBorder
-                    shadow="sm"
-                    radius="lg"
-                    p={{ base: 'md', sm: 'xl' }}
+                    px={{ base: 'md', sm: 'xl' }}
+                    py={{ base: 'lg', sm: 36 }}
                     h="100%"
+                    style={raised(SHADOW_MD, 32)}
                   >
-                    <Stack align="center" gap="md">
-                      <ThemeIcon
-                        variant="light"
-                        color="gray"
-                        size={80}
-                        radius="lg"
-                      >
+                    <Stack align="center" gap="lg">
+                      <Center w={84} h={84} style={raised(SHADOW_SM, 26)}>
                         <Image
                           src={item.icon}
                           alt={item.title}
-                          w={40}
-                          h={40}
+                          w={36}
+                          h={36}
                           fit="contain"
                         />
-                      </ThemeIcon>
+                      </Center>
                       <Text
-                        fw={700}
                         ta="center"
-                        tt="uppercase"
-                        fz={{ base: 'sm', sm: 'md' }}
+                        fz={{ base: 'xs', sm: 'sm' }}
+                        {...CAPTION}
                       >
                         {item.title}
                       </Text>
