@@ -1,29 +1,46 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Calendar } from '@/components/ui/calendar';
+import { useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+  Alert,
+  Button,
+  Container,
+  NumberInput,
+  Paper,
+  Stack,
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
 import { CalendarIcon } from 'lucide-react';
 import dayjs from 'dayjs';
-import { callApi, callServerAPI } from '@/api';
-import { selectUser } from '@/redux/slices/AuthSlice';
-import { Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
+import { toast } from '@/lib/toast';
+import { PageHeader } from '@/components/app';
+
+const RESOURCE = '/v2/fleet/tolls';
 
 const AddToll = () => {
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [tollAmount, setTollAmount] = useState('');
-  const [isDatePickerOpen, setDatePickerOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const { user, company } = useSelector(selectUser);
   const navigate = useNavigate();
+  // A failed toll opened from the list to be fixed and sent again.
+  const record = useLocation().state?.record;
+
+  const [selectedDate, setSelectedDate] = useState<Date | null>(
+    record ? dayjs(record.date.slice(0, 10)).toDate() : new Date(),
+  );
+  const [tollAmount, setTollAmount] = useState<number | string>(
+    record?.toll_amount ?? '',
+  );
+  const [loading, setLoading] = useState(false);
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two tolls.
+  const requestId = useRef(newRequestId());
 
   const handleSubmit = () => {
     if (!selectedDate || !tollAmount) {
@@ -31,110 +48,89 @@ const AddToll = () => {
       return;
     }
 
-    const data = {
-      date: dayjs(selectedDate).format('DD-MM-YYYY'),
-      km: 0.0,
+    const body = {
+      date: dayjs(selectedDate).format('YYYY-MM-DD'),
       amount: Number(tollAmount),
-      employee_id: Number(user.employee_id),
-      company_id: Number(company.id),
     };
 
-    const onCreatedSuccess = () => {
+    const onSuccess = () => {
       setLoading(false);
-      toast.success('Toll record added successfully');
+      toast.success(
+        record ? 'Toll updated and queued' : 'Toll saved and queued',
+      );
       navigate('/toll');
     };
 
-    const onCreatedError = () => {
+    const onError = (error) => {
       setLoading(false);
-      toast.success('Failed to add toll record');
-    };
-
-    const onSuccess = (response) => {
-      callApi(
-        'POST',
-        '/fleet/toll',
-        {
-          ...data,
-          id: response.data.message[0].id,
-          name: response.data.message[0].name,
-          odooStatus: response.data.message[0].state,
-          date: selectedDate,
-        },
-        onCreatedSuccess,
-        onCreatedError
-      );
-    };
-
-    const onError = () => {
-      setLoading(false);
-      toast.error('Failed to add toll record');
+      const message = errorMessage(error, 'Failed to save toll record');
+      setFieldError({ field: error?.field, message });
+      toast.error(message);
     };
 
     setLoading(true);
-    callServerAPI('POST', '/post/personal/toll', { data }, onSuccess, onError);
+    setFieldError(null);
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
+      callApi(
+        'POST',
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
+      );
+    }
   };
 
+  // Only the four days before today can be picked; today itself cannot.
+  const today = dayjs().startOf('day');
+  const errorFor = (field: string) =>
+    fieldError?.field === field ? fieldError.message : undefined;
+
   return (
-    <div className="container mx-auto p-4 max-w-md">
-      {loading && (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
-      )}
-      <div className={loading ? 'opacity-50 pointer-events-none' : ''}>
-        <h1 className="text-2xl font-bold mb-6">Add Toll</h1>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="date">Date</Label>
-            <Popover open={isDatePickerOpen} onOpenChange={setDatePickerOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal"
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {selectedDate
-                    ? dayjs(selectedDate).format('DD-MM-YYYY')
-                    : 'Select a Date'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={(date) => {
-                    setSelectedDate(date);
-                    setDatePickerOpen(false);
-                  }}
-                  disabled={(date) =>
-                    date > new Date() ||
-                    date <
-                      new Date(new Date().setDate(new Date().getDate() - 5)) ||
-                    date.getDate() === new Date().getDate()
-                  }
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-          <div>
-            <Label htmlFor="tollAmount">Toll Amount</Label>
-            <Input
-              id="tollAmount"
-              type="number"
-              value={tollAmount}
-              onChange={(e) => setTollAmount(e.target.value)}
-              placeholder="Enter Toll Amount"
-            />
-          </div>
-          <Button onClick={handleSubmit} disabled={loading} className="w-full">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Submit
+    <Container size="xs" px={0}>
+      <PageHeader title={record ? 'Edit Toll' : 'Add Toll'} back />
+      <Paper withBorder shadow="sm" p="lg">
+        <Stack gap="md">
+          {fieldError && !['date', 'amount'].includes(fieldError.field) && (
+            <Alert color="red" variant="light">
+              {fieldError.message}
+            </Alert>
+          )}
+          <DatePickerInput
+            label="Date"
+            placeholder="Select a Date"
+            valueFormat="DD-MM-YYYY"
+            leftSection={<CalendarIcon size={16} />}
+            value={selectedDate}
+            onChange={(value) =>
+              setSelectedDate(value ? dayjs(value).toDate() : null)
+            }
+            minDate={today.subtract(4, 'day').toDate()}
+            maxDate={today.toDate()}
+            excludeDate={(date) => dayjs(date).date() === today.date()}
+            disabled={loading}
+            error={errorFor('date')}
+            withAsterisk
+          />
+          <NumberInput
+            label="Toll Amount"
+            placeholder="Enter Toll Amount"
+            value={tollAmount}
+            onChange={setTollAmount}
+            min={0}
+            hideControls
+            disabled={loading}
+            error={errorFor('amount')}
+            withAsterisk
+          />
+          <Button onClick={handleSubmit} loading={loading} fullWidth>
+            {record ? 'Save & Resend' : 'Submit'}
           </Button>
-        </div>
-      </div>
-    </div>
+        </Stack>
+      </Paper>
+    </Container>
   );
 };
 

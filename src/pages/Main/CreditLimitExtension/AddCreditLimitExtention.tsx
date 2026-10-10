@@ -1,47 +1,63 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar } from '@/components/ui/calendar';
+  Alert,
+  Button,
+  Container,
+  NumberInput,
+  Paper,
+  Stack,
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
 import { CalendarIcon } from 'lucide-react';
-import { toast } from 'sonner';
 import dayjs from 'dayjs';
-import { callApi, callServerAPI } from '@/api';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
 import { selectUser } from '@/redux/slices/AuthSlice';
-import { Loader2 } from 'lucide-react';
+import { toast } from '@/lib/toast';
+import { PageHeader } from '@/components/app';
+import SelectBox from '@/components/Select';
 import Loader from '@/components/Loader';
 
+const RESOURCE = '/v2/credit-limit/extension';
+
 const AddCreditLimitExtention = () => {
-  const [policy, setPolicy] = useState('');
-  const [amount, setAmount] = useState('');
-  const [isDatePickerOpen, setDatePickerOpen] = useState(false);
+  // A failed request opened from the list to be fixed and sent again.
+  const record = useLocation().state?.record;
+  const [policy, setPolicy] = useState(record?.policy_id ?? '');
+  const [amount, setAmount] = useState<number | string>(record?.amount ?? '');
   const [date, setDate] = useState(new Date());
   const [policies, setPolicies] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [territory, setTerritory] = useState('');
-  const [customer, setCustomer] = useState('');
-  const { territories, user, company } = useSelector(selectUser);
-  const [allowedAmount, setAllowedAmount] = useState('');
-  const [usedLimit, setUsedLimit] = useState('');
-  const [remainingLimit, setRemainingLimit] = useState('');
+  const [territory, setTerritory] = useState(
+    record?.customer?.territory_id ?? '',
+  );
+  const [customer, setCustomer] = useState(record?.partner_id ?? '');
+  const { territories } = useSelector(selectUser);
+  const [allowedAmount, setAllowedAmount] = useState<number | string>(
+    record?.allowed_limit ?? '',
+  );
+  const [usedLimit, setUsedLimit] = useState<number | string>(
+    record?.used_limit ?? '',
+  );
+  const [remainingLimit, setRemainingLimit] = useState<number | string>(
+    record?.remaining_limit ?? '',
+  );
   const [customers, setCustomers] = useState([]);
   const [buttonLoading, setButtonLoading] = useState(false);
   const navigate = useNavigate();
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two requests.
+  const requestId = useRef(newRequestId());
 
   useEffect(() => {
     const fetchAddCreditLimitApplyCategory = async () => {
@@ -98,11 +114,14 @@ const AddCreditLimitExtention = () => {
     const fetchCreditLimitDetails = async () => {
       const onSuccess = (response) => {
         setLoading(false);
-        setAllowedAmount(
-          response.data.expense[0].current_allowed_limit.toString()
-        );
-        setUsedLimit(response.data.expense[0].used_limit.toString());
-        setRemainingLimit(response.data.expense[0].remaining_limit.toString());
+        const figures = response?.data?.expense?.[0];
+        if (!figures) {
+          onError();
+          return;
+        }
+        setAllowedAmount(figures.current_allowed_limit.toString());
+        setUsedLimit(figures.used_limit.toString());
+        setRemainingLimit(figures.remaining_limit.toString());
       };
 
       const onError = () => {
@@ -113,18 +132,12 @@ const AddCreditLimitExtention = () => {
       };
 
       setLoading(true);
-      callServerAPI(
-        'POST',
-        '/get/creditlimit/extension',
-        {
-          data: {
-            company_id: 1,
-            partner_id: customer,
-            policy_id: policy,
-          },
-        },
+      callApi(
+        'GET',
+        `/v2/lookups/credit-limit-extension?partner_id=${customer}&policy_id=${policy}`,
+        null,
         onSuccess,
-        onError
+        onError,
       );
     };
 
@@ -145,66 +158,43 @@ const AddCreditLimitExtention = () => {
       return;
     }
 
-    const data = {
+    const body = {
       partner_id: Number(customer),
       policy_id: Number(policy),
-      company_id: Number(company.id),
       amount: Number(amount),
       allowed_limit: Number(allowedAmount),
       used_limit: Number(usedLimit),
       remaining_limit: Number(remainingLimit),
-      requested_by_id: Number(user.employee_id),
     };
 
-    const onCreatedSuccess = () => {
-      setLoading(false);
+    const onSuccess = () => {
       setButtonLoading(false);
-      toast.success('Credit Limit Extension Added Successfully', {
-        description: 'Success',
-      });
+      toast.success(
+        record ? 'Credit limit extension updated and queued' : 'Credit limit extension saved and queued',
+      );
       navigate('/credit-limit-extension');
     };
 
-    const onCreatedError = () => {
-      setLoading(false);
+    const onError = (error) => {
       setButtonLoading(false);
-      toast.error('Failed to add credit limit extension', {
-        description: 'Error',
-      });
-    };
-
-    const onSuccess = (response) => {
-      const mergedData = {
-        ...data,
-        id: response.data.expense[0].id,
-        sequence: response.data.expense[0].sequence,
-      };
-
-      callApi(
-        'POST',
-        '/credit-limit/extension',
-        mergedData,
-        onCreatedSuccess,
-        onCreatedError
-      );
-    };
-
-    const onError = () => {
-      setLoading(false);
-      setButtonLoading(false);
-      toast.error('Failed to add credit limit extension', {
-        description: 'Error',
-      });
+      const message = errorMessage(error, 'Failed to add credit limit extension');
+      setFieldError({ field: error?.field, message });
+      toast.error(message);
     };
 
     setButtonLoading(true);
-    callServerAPI(
-      'POST',
-      '/post/creditlimit/extension',
-      { data },
-      onSuccess,
-      onError
-    );
+    setFieldError(null);
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
+      callApi(
+        'POST',
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
+      );
+    }
   };
 
   const territoriesData =
@@ -228,151 +218,104 @@ const AddCreditLimitExtention = () => {
         }))
       : [];
 
+  const errorFor = (field: string) =>
+    fieldError?.field === field ? fieldError.message : undefined;
+
+  // Only dates after today can be picked.
+  const tomorrow = dayjs().add(1, 'day').startOf('day').toDate();
+
   return (
-    <div className="container mx-auto p-4 max-w-md">
-      <Loader loading={loading} />
-      <Card className={loading ? 'opacity-50 pointer-events-none' : ''}>
-        <CardHeader>
-          <CardTitle>Add Credit Limit Extension</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="date">Date</Label>
-              <Popover open={isDatePickerOpen} onOpenChange={setDatePickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? dayjs(date).format('DD-MM-YYYY') : 'Select a Date'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={(selectedDate) => {
-                      setDate(selectedDate);
-                      setDatePickerOpen(false);
-                    }}
-                    disabled={(d) => d < new Date()}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div>
-              <Label htmlFor="territory">Territory</Label>
-              <Select value={territory} onValueChange={setTerritory}>
-                <SelectTrigger id="territory" className="w-full">
-                  <SelectValue placeholder="Select the territory" />
-                </SelectTrigger>
-                <SelectContent>
-                  {territoriesData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="customer">Customer</Label>
-              <Select
-                value={customer}
-                onValueChange={setCustomer}
-                disabled={!territory}
-              >
-                <SelectTrigger id="customer" className="w-full">
-                  <SelectValue placeholder="Select the customer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customersData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="policy">Policy</Label>
-              <Select
-                value={policy}
-                onValueChange={setPolicy}
-                disabled={!territory || !customer}
-              >
-                <SelectTrigger id="policy" className="w-full">
-                  <SelectValue placeholder="Select the policy" />
-                </SelectTrigger>
-                <SelectContent>
-                  {policiesData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="allowedAmount">Allowed Amount</Label>
-              <Input
-                id="allowedAmount"
-                type="number"
-                value={allowedAmount}
-                onChange={(e) => setAllowedAmount(e.target.value)}
-                placeholder="Allowed amount"
-                disabled
-              />
-            </div>
-            <div>
-              <Label htmlFor="usedLimit">Used Limit</Label>
-              <Input
-                id="usedLimit"
-                type="number"
-                value={usedLimit}
-                onChange={(e) => setUsedLimit(e.target.value)}
-                placeholder="Used limit"
-                disabled
-              />
-            </div>
-            <div>
-              <Label htmlFor="remainingLimit">Remaining Limit</Label>
-              <Input
-                id="remainingLimit"
-                type="number"
-                value={remainingLimit}
-                onChange={(e) => setRemainingLimit(e.target.value)}
-                placeholder="Remaining limit"
-                disabled
-              />
-            </div>
-            <div>
-              <Label htmlFor="amount">Limit Extension</Label>
-              <Input
-                id="amount"
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="Enter the limit extension"
-              />
-            </div>
-            <Button
-              onClick={handleAddCreditLimitExtension}
-              disabled={buttonLoading}
-              className="w-full"
-            >
-              {buttonLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : null}
-              Add Credit Limit Extension
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <Container size="xs" px={0}>
+      <PageHeader
+        title={
+          record ? 'Edit Credit Limit Extension' : 'Add Credit Limit Extension'
+        }
+        back
+      />
+      <Paper withBorder shadow="sm" p="lg" pos="relative">
+        <Loader loading={loading} />
+        <Stack gap="md">
+          {fieldError && !['partner_id', 'policy_id', 'amount'].includes(fieldError.field) && (
+            <Alert color="red" variant="light">
+              {fieldError.message}
+            </Alert>
+          )}
+          <DatePickerInput
+            label="Date"
+            placeholder="Select a Date"
+            valueFormat="DD-MM-YYYY"
+            leftSection={<CalendarIcon size={16} />}
+            value={date}
+            onChange={(value) => setDate(value ? dayjs(value).toDate() : null)}
+            minDate={tomorrow}
+          />
+          <SelectBox
+            label="Territory"
+            placeholder="Select the territory"
+            data={territoriesData}
+            selectedValue={territory}
+            onValueChange={setTerritory}
+          />
+          <SelectBox
+            label="Customer"
+            placeholder="Select the customer"
+            data={customersData}
+            selectedValue={customer}
+            onValueChange={setCustomer}
+            disabled={!territory}
+            error={errorFor('partner_id')}
+          />
+          <SelectBox
+            label="Policy"
+            placeholder="Select the policy"
+            data={policiesData}
+            selectedValue={policy}
+            onValueChange={setPolicy}
+            disabled={!territory || !customer}
+            error={errorFor('policy_id')}
+          />
+          <NumberInput
+            label="Allowed Amount"
+            placeholder="Allowed amount"
+            value={allowedAmount}
+            onChange={setAllowedAmount}
+            hideControls
+            disabled
+          />
+          <NumberInput
+            label="Used Limit"
+            placeholder="Used limit"
+            value={usedLimit}
+            onChange={setUsedLimit}
+            hideControls
+            disabled
+          />
+          <NumberInput
+            label="Remaining Limit"
+            placeholder="Remaining limit"
+            value={remainingLimit}
+            onChange={setRemainingLimit}
+            hideControls
+            disabled
+          />
+          <NumberInput
+            label="Limit Extension"
+            placeholder="Enter the limit extension"
+            value={amount}
+            onChange={setAmount}
+            hideControls
+            error={errorFor('amount')}
+          />
+          <Button
+            onClick={handleAddCreditLimitExtension}
+            loading={buttonLoading}
+            fullWidth
+          >
+            {record ? 'Save & Resend' : 'Add Credit Limit Extension'}
+          </Button>
+        </Stack>
+      </Paper>
+    </Container>
   );
 };
 

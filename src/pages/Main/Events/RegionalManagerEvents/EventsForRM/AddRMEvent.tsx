@@ -1,52 +1,98 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { toast } from 'sonner';
+  Alert,
+  Button,
+  Container,
+  Group,
+  Input,
+  Paper,
+  Rating,
+  SimpleGrid,
+  TextInput,
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { CalendarIcon } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import dayjs from 'dayjs';
-import { callApi, callServerAPI } from '@/api';
+import { parseCustomDate } from '@/utils';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
 import { selectUser } from '@/redux/slices/AuthSlice';
-import { Loader2, Star } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar } from '@/components/ui/calendar';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import Loader from '@/components/Loader';
+import SelectBox from '@/components/Select';
+import { PageHeader } from '@/components/app';
+
+const RESOURCE = '/v2/events';
+
+// Fields that show the server's (or Odoo's) message under themselves.
+const FORM_FIELDS = [
+  'name',
+  'territory_id',
+  'dealer_ids',
+  'event_type_id',
+  'event_temp_type_id',
+  'crop_id',
+  'demo_product_id',
+  'cpo_id',
+  'cpo_name',
+  'date_begin',
+  'date_end',
+  'rating',
+];
+
+// Stored ids → the options a multi-select holds (matched by value).
+const asOptions = (ids) =>
+  (ids || []).map((id) => ({ label: String(id), value: id }));
 
 const AddRMEvent = () => {
   const navigate = useNavigate();
+  // A failed event opened to be fixed and sent again.
+  const record = useLocation().state?.record;
   const user = useSelector(selectUser);
   const { territories, region: userRegion } = user;
   const [loading, setLoading] = useState(false);
-  const [territory, setTerritory] = useState('');
-  const [dateBegin, setDateBegin] = useState(new Date());
-  const [dateEnd, setDateEnd] = useState(new Date());
+  const [territory, setTerritory] = useState(record?.territory_id ?? '');
+  const [dateBegin, setDateBegin] = useState(
+    (record && parseCustomDate(record.date_begin)) || new Date(),
+  );
+  const [dateEnd, setDateEnd] = useState(
+    (record && parseCustomDate(record.date_end)) || new Date(),
+  );
   const [crops, setCrops] = useState([]);
-  const [selectedCrops, setSelectedCrops] = useState([]);
+  const [selectedCrops, setSelectedCrops] = useState(
+    asOptions(record?.crop_id),
+  );
   const [products, setProducts] = useState([]);
-  const [selectedProducts, setSelectedProducts] = useState([]);
-  const [eventName, setEventName] = useState('');
-  const [eventTemId, setEventTemId] = useState('');
+  const [selectedProducts, setSelectedProducts] = useState(
+    asOptions(record?.demo_product_id),
+  );
+  const [eventName, setEventName] = useState(record?.name ?? '');
+  const [eventTemId, setEventTemId] = useState(record?.event_type_id ?? '');
   const [eventTemplates, setEventTemplates] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [selectedCustomers, setSelectedCustomers] = useState([]);
-  const [templateCategoryId, setTemplateCategoryId] = useState('');
-  const [rating, setRating] = useState(1);
-  const [cpoName, setCpoName] = useState('');
-  const [cpoId, setCpoId] = useState(null);
+  const [selectedCustomers, setSelectedCustomers] = useState(
+    asOptions(record?.dealer_ids),
+  );
+  const [templateCategoryId, setTemplateCategoryId] = useState(
+    record?.event_temp_type_id ?? '',
+  );
+  const [rating, setRating] = useState(record?.rating ?? 1);
+  const [cpoName, setCpoName] = useState(record?.cpo_name ?? '');
+  const [cpoId, setCpoId] = useState(record?.copId ?? null);
   const [cpos, setCpos] = useState([]);
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two events.
+  const requestId = useRef(newRequestId());
 
   useEffect(() => {
     if (!userRegion) return;
@@ -140,91 +186,55 @@ const AddRMEvent = () => {
       return;
     }
 
-    const data: {
-      name: string;
-      crop_id: string[];
-      demo_product_id: string[];
-      date_begin: string;
-      date_end: string;
-      region_id: number;
-      territory_id: string;
-      organizer_id: number;
-      cpo_name: string;
-      rsm_id: number;
-      event_type_id: string;
-      company_id: number;
-      dealer_ids: string[];
-      event_temp_type_id: string;
-      id?: number;
-      event_stage_id?: number;
-      cpo_name_id: number;
-      copId: number;
-    } = {
+    // The region, organiser, manager and company are set by the server, which
+    // also queues the rating once the event is in Odoo.
+    const body = {
       name: eventName,
       crop_id: selectedCrops.map((item) => item.value),
       demo_product_id: selectedProducts.map((item) => item.value),
-      date_begin: dayjs(dateBegin).format('DD/MM/YYYY HH:mm:00'),
-      date_end: dayjs(dateEnd).format('DD/MM/YYYY HH:mm:00'),
-      region_id: userRegion.id,
+      date_begin: dayjs(dateBegin).format('YYYY-MM-DD HH:mm'),
+      date_end: dayjs(dateEnd).format('YYYY-MM-DD HH:mm'),
       territory_id: territory,
-      organizer_id: user.id,
-      cpo_name: cpoName,
-      rsm_id: user.manager.id,
       event_type_id: eventTemId,
-      company_id: user.company_id,
+      cpo_name: cpoName,
+      ...(cpoId && { cpo_id: cpoId }),
       dealer_ids: selectedCustomers.map((item) => item.value),
-      event_temp_type_id: templateCategoryId,
-      cpo_name_id: cpoId,
-      copId: cpoId,
+      ...(templateCategoryId && { event_temp_type_id: templateCategoryId }),
+      rating: Number(rating),
     };
 
-    const onCreatedSuccess = () => {
-      toast.success('Event added successfully', { description: 'Success' });
+    const onSuccess = () => {
       setLoading(false);
-      navigate(-1);
-    };
-    const onCreatedError = () => {
-      toast.error('Failed to add event', { description: 'Error' });
-      setLoading(false);
-    };
-    const onSuccess = (response) => {
-      data.id = response.data.id;
-      data.event_stage_id = response.data.stage_id;
-      callServerAPI(
-        'POST',
-        '/rate/event',
-        {
-          data: { event_id: data.id, rating: (Number(rating) + 1).toString() },
-        },
-        () => {
-          toast.success('Event added successfully and rated', {
-            description: 'Success',
-          });
-          callApi(
-            'POST',
-            '/events/create',
-            data,
-            onCreatedSuccess,
-            onCreatedError,
-          );
-        },
-        () => {
-          setLoading(false);
-          toast.error('Failed to add event checklist', {
-            description: 'Error',
-          });
-        },
+      toast.success(
+        record ? 'Event updated and queued' : 'Event saved and queued',
+        { description: 'Success' },
       );
+      navigate(-1);
     };
     const onError = (error) => {
       setLoading(false);
-      toast.error(error.message || 'Failed to add event', {
-        description: 'Error',
-      });
+      const message = errorMessage(error, 'Failed to add event');
+      setFieldError({ field: error?.field, message });
+      toast.error(message, { description: 'Error' });
     };
+
     setLoading(true);
-    callServerAPI('POST', '/post/event', { data }, onSuccess, onError);
+    setFieldError(null);
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
+      callApi(
+        'POST',
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
+      );
+    }
   };
+
+  const errorFor = (field: string) =>
+    fieldError?.field === field ? fieldError.message : undefined;
 
   const territoriesData =
     territories.map((item) => ({
@@ -271,341 +281,141 @@ const AddRMEvent = () => {
       value: item.id,
     })) || [];
 
-  const handleMultiSelect = (setState, currentState, value) => {
-    const selected = currentState.find((item) => item.value === value);
-    if (selected) {
-      setState(currentState.filter((item) => item.value !== value));
-    } else {
-      const item =
-        customersData.find((d) => d.value === value) ||
-        cropsData.find((d) => d.value === value) ||
-        productsData.find((d) => d.value === value);
-      if (item) setState([...currentState, item]);
-    }
-  };
-
   return (
-    <div className="w-full md:w-3/4 mx-auto p-4">
-      <Loader loading={loading} />
-      <Card className="shadow-lg bg-white dark:bg-gray-800">
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold">Add Event</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="w-full">
-              <Label htmlFor="eventName" className="text-sm font-medium">
-                Event Address <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="eventName"
-                placeholder="Enter the event address"
-                value={eventName}
-                onChange={(e) => setEventName(e.target.value)}
-                className="mt-1 w-full"
-              />
-            </div>
-            <div>
-              <Label htmlFor="region" className="text-sm font-medium">
-                Region
-              </Label>
-              <Input
-                id="region"
-                placeholder="Region"
-                value={userRegion?.name || 'N/A'}
-                disabled
-                className="mt-1 w-full"
-              />
-            </div>
+    <Container size="md" px={0}>
+      <PageHeader title={record ? 'Edit Event' : 'Add Event'} />
+      <Paper withBorder shadow="sm" p="lg" pos="relative">
+        <Loader loading={loading} />
+        {fieldError && !FORM_FIELDS.includes(fieldError.field) && (
+          <Alert color="red" variant="light" mb="md">
+            {fieldError.message}
+          </Alert>
+        )}
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+          <TextInput
+            label="Event Address"
+            placeholder="Enter the event address"
+            value={eventName}
+            onChange={(e) => setEventName(e.currentTarget.value)}
+            error={errorFor('name')}
+            withAsterisk
+          />
+          <TextInput
+            label="Region"
+            placeholder="Region"
+            value={userRegion?.name || 'N/A'}
+            disabled
+            readOnly
+          />
 
-            <div>
-              <Label htmlFor="territory" className="text-sm font-medium">
-                Territory <span className="text-red-500">*</span>
-              </Label>
-              <Select value={territory} onValueChange={setTerritory}>
-                <SelectTrigger className="mt-1 w-full">
-                  <SelectValue placeholder="Select the territory" />
-                </SelectTrigger>
-                <SelectContent>
-                  {territoriesData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="dealer" className="text-sm font-medium">
-                Dealer
-              </Label>
-              <Select
-                onValueChange={(value) =>
-                  handleMultiSelect(
-                    setSelectedCustomers,
-                    selectedCustomers,
-                    value,
-                  )
-                }
-              >
-                <SelectTrigger className="mt-1 w-full">
-                  <SelectValue placeholder="Select the dealer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customersData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedCustomers.some(
-                            (c) => c.value === item.value,
-                          )}
-                          readOnly
-                          className="mr-2"
-                        />
-                        {item.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {selectedCustomers.map((item) => (
-                  <span
-                    key={item.value}
-                    className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
-                  >
-                    {item.label}
-                  </span>
-                ))}
-              </div>
-            </div>
+          <SelectBox
+            label="Territory"
+            placeholder="Select the territory"
+            data={territoriesData}
+            selectedValue={territory}
+            onValueChange={setTerritory}
+            error={errorFor('territory_id')}
+            required
+          />
+          <SelectBox
+            label="Dealer"
+            placeholder="Select the dealer"
+            data={customersData}
+            selectedValue={selectedCustomers}
+            onValueChange={setSelectedCustomers}
+            error={errorFor('dealer_ids')}
+            isMultiple
+          />
 
-            <div>
-              <Label htmlFor="eventCategory" className="text-sm font-medium">
-                Event Category <span className="text-red-500">*</span>
-              </Label>
-              <Select value={eventTemId} onValueChange={setEventTemId}>
-                <SelectTrigger className="mt-1 w-full">
-                  <SelectValue placeholder="Select the event category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {eventTemplatesData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="categoryType" className="text-sm font-medium">
-                Category Type <span className="text-red-500">*</span>
-              </Label>
-              <Select
-                value={templateCategoryId}
-                onValueChange={setTemplateCategoryId}
-              >
-                <SelectTrigger className="mt-1 w-full">
-                  <SelectValue placeholder="Select the event category type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {templateCategoryData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <SelectBox
+            label="Event Category"
+            placeholder="Select the event category"
+            data={eventTemplatesData}
+            selectedValue={eventTemId}
+            onValueChange={setEventTemId}
+            error={errorFor('event_type_id')}
+            required
+          />
+          <SelectBox
+            label="Category Type"
+            placeholder="Select the event category type"
+            data={templateCategoryData}
+            selectedValue={templateCategoryId}
+            onValueChange={setTemplateCategoryId}
+            error={errorFor('event_temp_type_id')}
+            required
+          />
 
-            <div>
-              <Label htmlFor="crop" className="text-sm font-medium">
-                Crop
-              </Label>
-              <Select
-                onValueChange={(value) =>
-                  handleMultiSelect(setSelectedCrops, selectedCrops, value)
-                }
-              >
-                <SelectTrigger className="mt-1 w-full">
-                  <SelectValue placeholder="Select the crop" />
-                </SelectTrigger>
-                <SelectContent>
-                  {cropsData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedCrops.some(
-                            (c) => c.value === item.value,
-                          )}
-                          readOnly
-                          className="mr-2"
-                        />
-                        {item.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {selectedCrops.map((item) => (
-                  <span
-                    key={item.value}
-                    className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
-                  >
-                    {item.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="product" className="text-sm font-medium">
-                Product
-              </Label>
-              <Select
-                onValueChange={(value) =>
-                  handleMultiSelect(
-                    setSelectedProducts,
-                    selectedProducts,
-                    value,
-                  )
-                }
-              >
-                <SelectTrigger className="mt-1 w-full">
-                  <SelectValue placeholder="Select the product" />
-                </SelectTrigger>
-                <SelectContent>
-                  {productsData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedProducts.some(
-                            (p) => p.value === item.value,
-                          )}
-                          readOnly
-                          className="mr-2"
-                        />
-                        {item.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {selectedProducts.map((item) => (
-                  <span
-                    key={item.value}
-                    className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
-                  >
-                    {item.label}
-                  </span>
-                ))}
-              </div>
-            </div>
+          <SelectBox
+            label="Crop"
+            placeholder="Select the crop"
+            data={cropsData}
+            selectedValue={selectedCrops}
+            onValueChange={setSelectedCrops}
+            error={errorFor('crop_id')}
+            isMultiple
+          />
+          <SelectBox
+            label="Product"
+            placeholder="Select the product"
+            data={productsData}
+            selectedValue={selectedProducts}
+            onValueChange={setSelectedProducts}
+            error={errorFor('demo_product_id')}
+            isMultiple
+          />
 
-            <div>
-              <Label htmlFor="cpoId" className="text-sm font-medium">
-                CPO for Allowance
-              </Label>
-              <Select
-                value={cpoId}
-                onValueChange={(value) => {
-                  const cpo = cposData.find((item) => item.value === value);
-                  setCpoName(cpo?.label || '');
-                  setCpoId(cpo?.value || '');
-                }}
-              >
-                <SelectTrigger className="w-full mt-1">
-                  <SelectValue placeholder="Select the CPO" />
-                </SelectTrigger>
-                <SelectContent>
-                  {cposData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-sm font-medium">
-                Date Begin <span className="text-red-500">*</span>
-              </Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full mt-1 text-left">
-                    {dayjs(dateBegin).format('DD/MM/YYYY HH:mm')}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={dateBegin}
-                    onSelect={setDateBegin}
-                    initialFocus
-                    defaultMonth={dateBegin}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
+          <SelectBox
+            label="CPO for Allowance"
+            placeholder="Select the CPO"
+            data={cposData}
+            selectedValue={cpoId}
+            onValueChange={(value) => {
+              const cpo = cposData.find((item) => item.value === value);
+              setCpoName(cpo?.label || '');
+              setCpoId(cpo?.value || '');
+            }}
+            error={errorFor('cpo_id') || errorFor('cpo_name')}
+          />
+          <DatePickerInput
+            label="Date Begin"
+            valueFormat="DD/MM/YYYY HH:mm"
+            leftSection={<CalendarIcon size={16} />}
+            value={dateBegin}
+            onChange={(value) =>
+              setDateBegin(value ? dayjs(value).toDate() : null)
+            }
+            error={errorFor('date_begin')}
+            withAsterisk
+          />
 
-            <div>
-              <Label className="text-sm font-medium">
-                Date End <span className="text-red-500">*</span>
-              </Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full mt-1 text-left">
-                    {dayjs(dateEnd).format('DD/MM/YYYY HH:mm')}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={dateEnd}
-                    onSelect={setDateEnd}
-                    initialFocus
-                    defaultMonth={dateEnd}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
+          <DatePickerInput
+            label="Date End"
+            valueFormat="DD/MM/YYYY HH:mm"
+            leftSection={<CalendarIcon size={16} />}
+            value={dateEnd}
+            onChange={(value) =>
+              setDateEnd(value ? dayjs(value).toDate() : null)
+            }
+            error={errorFor('date_end')}
+            withAsterisk
+          />
 
-            <div>
-              <Label className="text-sm font-medium">Rating</Label>
-              <div className="flex gap-1 mt-2">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <Star
-                    key={star}
-                    className={`h-6 w-6 cursor-pointer ${
-                      star <= rating
-                        ? 'text-yellow-400 fill-yellow-400'
-                        : 'text-gray-300'
-                    }`}
-                    onClick={() => setRating(star)}
-                  />
-                ))}
-              </div>
-            </div>
+          <Input.Wrapper label="Rating" error={errorFor('rating')}>
+            <Rating value={rating} onChange={setRating} size="lg" mt={4} />
+          </Input.Wrapper>
+        </SimpleGrid>
 
-            <div className="mt-6 flex gap-2">
-              <Button onClick={handleAddEvent} disabled={loading}>
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
-                Submit
-              </Button>
-              <Button variant="outline" onClick={() => navigate(-1)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        <Group gap="sm" mt="xl">
+          <Button onClick={handleAddEvent} loading={loading}>
+            {record ? 'Save & Resend' : 'Submit'}
+          </Button>
+          <Button variant="default" onClick={() => navigate(-1)}>
+            Cancel
+          </Button>
+        </Group>
+      </Paper>
+    </Container>
   );
 };
 

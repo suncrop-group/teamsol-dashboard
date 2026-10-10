@@ -1,43 +1,103 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { format } from 'date-fns';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Loader2 } from 'lucide-react';
-import SelectBox from '@/components/Select';
-import { callApi, callServerAPI } from '@/api';
-import { selectUser } from '@/redux/slices/AuthSlice';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { CalendarIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { uploadToCloudinary } from '@/utils';
-import { toast } from 'sonner';
+  ActionIcon,
+  Alert,
+  Button,
+  Container,
+  FileInput,
+  Group,
+  Loader,
+  Paper,
+  ScrollArea,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+  Textarea,
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { CalendarIcon, X } from 'lucide-react';
 import dayjs from 'dayjs';
+import SelectBox from '@/components/Select';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
+import { selectUser } from '@/redux/slices/AuthSlice';
+import { uploadToCloudinary } from '@/utils';
+import { toast } from '@/lib/toast';
+import { PageHeader } from '@/components/app';
+
+const RESOURCE = '/v2/expenses';
+
+// Fields with their own input; any other error is shown in an alert.
+const FORM_FIELDS = [
+  'date',
+  'name',
+  'category_id',
+  'amount',
+  'description',
+  'urls',
+];
+
+// The backend stores an expense's day as `DD-MM-YYYY` text; older records
+// hold an ISO date.
+const parseExpenseDate = (value?: string) => {
+  const parts = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value || '');
+  if (parts) {
+    return new Date(Number(parts[3]), Number(parts[2]) - 1, Number(parts[1]));
+  }
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.toDate() : new Date();
+};
+
+// Same rule the calendar had before: no future dates, nothing older than
+// five days, and not today's day of the month.
+const isDateDisabled = (value: string) => {
+  const date = dayjs(value).toDate();
+  return (
+    date > new Date() ||
+    date < new Date(new Date().setDate(new Date().getDate() - 5)) ||
+    date.getDate() === new Date().getDate()
+  );
+};
 
 const AddExpenseReporting = () => {
   const navigate = useNavigate();
   const user = useSelector(selectUser);
-  const [expenseCategory, setExpenseCategory] = useState('');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date());
+  const { state } = useLocation(); // state is any or unknown
+  // A failed expense opened from a list to be fixed and sent again.
+  const record = state?.record;
+  // The event's Odoo id, when the expense belongs to an event.
+  const eventId = state?.event_id ?? record?.event_id;
+  const [expenseCategory, setExpenseCategory] = useState(
+    record?.category_id ?? '',
+  );
+  const [amount, setAmount] = useState(String(record?.amount ?? ''));
+  const [date, setDate] = useState<Date>(
+    record ? parseExpenseDate(record.date) : new Date(),
+  );
   const [expensesCategory, setExpensesCategory] = useState([]);
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState<string>(
+    record?.description || '',
+  );
   const [loading, setLoading] = useState(false);
   const [addExpenseLoading, setAddExpenseLoading] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
-  const [openDatePicker, setOpenDatePicker] = useState(false);
   const [isAttachmentAllowed, setIsAttachmentAllowed] = useState(false);
-  const { state } = useLocation(); // state is any or unknown
+  // Attachments already uploaded for the expense being edited.
+  const existingUrls: string[] = record?.urls || [];
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two expenses.
+  const requestId = useRef(newRequestId());
 
   useEffect(() => {
     const fetchExpensesCategory = async () => {
@@ -59,7 +119,7 @@ const AddExpenseReporting = () => {
       setLoading(true);
       callApi(
         'GET',
-        `/expense/categories?type=${state?.event_id ? 'events' : ''}`,
+        `/expense/categories?type=${eventId ? 'events' : ''}`,
         null,
         onSuccess,
         onError,
@@ -67,7 +127,7 @@ const AddExpenseReporting = () => {
     };
 
     fetchExpensesCategory();
-  }, [state?.event_id]);
+  }, [eventId]);
 
   const expenseCategoriesData = expensesCategory.map((item) => ({
     label: item.name,
@@ -78,7 +138,7 @@ const AddExpenseReporting = () => {
     if (expenseCategory) {
       const selectedCategory = expensesCategory.find(
         (item: { id: string; is_attachment?: boolean }) =>
-          item.id === expenseCategory,
+          String(item.id) === String(expenseCategory),
       );
       if (selectedCategory) {
         setIsAttachmentAllowed(selectedCategory?.is_attachment ?? false);
@@ -97,18 +157,20 @@ const AddExpenseReporting = () => {
 
   useEffect(() => {
     const { event_id, event_title, event_description } = state || {};
-    if (event_id && event_title && event_description) {
+    if (!record && event_id && event_title && event_description) {
       setDescription(`${event_title} - ${event_description}`);
     }
-  }, [state]);
+  }, [state, record]);
 
   useEffect(() => {
-    if (state?.event_id) {
+    if (record) {
+      document.title = 'Edit Expense';
+    } else if (state?.event_id) {
       document.title = `Add Expense For Event #${state.event_id}`;
     } else {
       document.title = 'Add Expense';
     }
-  }, [state?.event_id]);
+  }, [record, state?.event_id]);
 
   const handleAddExpense = async () => {
     if (
@@ -121,7 +183,11 @@ const AddExpenseReporting = () => {
       return;
     }
 
-    if ((!files || files.length === 0) && isAttachmentAllowed) {
+    if (
+      (!files || files.length === 0) &&
+      existingUrls.length === 0 &&
+      isAttachmentAllowed
+    ) {
       toast.error('Please select at least one file');
       return;
     }
@@ -161,91 +227,69 @@ const AddExpenseReporting = () => {
       }
     }
 
-    const data: {
-      name: string;
-      category_id: string;
-      description: string;
-      date: string;
-      company_id: number;
-      employee_id: number;
-      urls?: string[];
-      currency_id: number;
-      event_id?: string;
-      url?: string;
-
-      file_urls?: string[];
-    } = {
-      name: description,
-      category_id: expenseCategory,
+    const body: Record<string, unknown> = {
+      // Category label, shown in lists.
+      name: expenseCategoriesData.find(
+        (item) => String(item.value) === String(expenseCategory),
+      )?.label,
+      category_id: Number(expenseCategory),
+      amount: Number(amount),
       description: description,
-      date: dayjs(date).format('DD-MM-YYYY'),
-      company_id: user.company.id,
-      employee_id: user.id,
-      currency_id: 160,
-      url: '',
-      file_urls: uploadImages || [],
+      date: dayjs(date).format('YYYY-MM-DD'),
+      // New uploads replace the attachments an edited expense already had.
+      urls: !isAttachmentAllowed
+        ? []
+        : uploadImages.length > 0
+          ? uploadImages
+          : existingUrls,
     };
 
-    if (state?.event_id) {
-      data.event_id = state.event_id;
+    const onSuccess = () => {
+      setLoading(false);
+      setAddExpenseLoading(false);
+      toast.success(
+        record ? 'Expense updated and queued' : 'Expense saved and queued',
+      );
+      // Event expenses are added from the event's page; go back to it.
+      if (eventId) navigate(-1);
+      else navigate('/expenses');
+    };
+
+    const onError = (error) => {
+      setLoading(false);
+      setAddExpenseLoading(false);
+      const message = errorMessage(
+        error,
+        'Failed to add expense. Please try again.',
+      );
+      setFieldError({ field: error?.field, message });
+      toast.error(message);
+    };
+
+    setFieldError(null);
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
+      callApi(
+        'POST',
+        RESOURCE,
+        {
+          ...body,
+          // The event's Odoo id.
+          ...(state?.event_id && { event_id: state.event_id }),
+          clientRequestId: requestId.current,
+        },
+        onSuccess,
+        onError,
+      );
     }
-
-    const onSuccessDB = () => {
-      setLoading(false);
-      toast.success('Expense added successfully');
-      setAddExpenseLoading(false);
-      navigate(-1);
-    };
-
-    const onSuccess = (response: {
-      status: string;
-      data: {
-        message: Array<{ id: number; state: string }>;
-      };
-    }) => {
-      const dbData = {
-        amount: amount,
-        name: expenseCategoriesData.find(
-          (item) => item.value === expenseCategory,
-        )?.label,
-        category_id: expenseCategory,
-        description: description,
-        date: date,
-        company_id: user.company.id,
-        employee_id: user.id,
-        id: response?.data?.message[0]?.id,
-        status: 'sent',
-        odooStatus: response?.data?.message[0]?.state || 'draft',
-        urls: uploadImages || [],
-      };
-      if (data?.event_id) {
-        // @ts-expect-error
-        dbData.event_id = data.event_id;
-      }
-
-      //  event_id: data?.event_id ? data?.event_id : null,
-      // First upload the images to the server
-      callApi('POST', '/expense/create', { ...dbData }, onSuccessDB, onError);
-    };
-
-    const onError = () => {
-      setLoading(false);
-      toast.error('Failed to add expense. Please try again.');
-      setAddExpenseLoading(false);
-    };
-
-    callServerAPI(
-      'POST',
-      '/post/expense',
-      { data: { ...data, total_amount_currency: Number(amount) } },
-      onSuccess,
-      onError,
-    );
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(e.target.files || []);
+  const errorFor = (...fields: string[]) =>
+    fields.includes(fieldError?.field) ? fieldError.message : undefined;
 
+  // The picker shows `files`, so a rejected selection needs no manual reset.
+  const handleFileChange = (selectedFiles: File[]) => {
     if (selectedFiles.length === 0) {
       return;
     }
@@ -280,161 +324,149 @@ const AddExpenseReporting = () => {
 
     if (!hasError) {
       setFiles(validFiles);
-    } else {
-      // Clear the input
-      e.target.value = '';
     }
   };
+
   return (
-    <div className="min-h-screen  flex items-center justify-center p-4">
+    <Container size="sm" px={0}>
+      <PageHeader
+        title={
+          record
+            ? 'Edit Expense'
+            : state?.event_id
+              ? `Add Expense For Event #${state.event_id}`
+              : 'Add Expense'
+        }
+        back
+      />
       {loading ? (
-        <Loader2 className="h-8 w-8 animate-spin" />
+        <Group justify="center" h={256}>
+          <Loader />
+        </Group>
       ) : (
-        <Card className="w-full max-w-2xl">
-          <CardHeader>
-            <CardTitle>
-              {state?.event_id
-                ? `Add Expense For Event #${state.event_id}`
-                : 'Add Expense'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
-                <Popover open={openDatePicker} onOpenChange={setOpenDatePicker}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'w-full justify-start text-left font-normal',
-                        !date && 'text-muted-foreground',
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {date ? format(date, 'dd-MM-yyyy') : 'Pick a date'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={date}
-                      onSelect={(selectedDate) => {
-                        if (selectedDate) {
-                          setDate(selectedDate);
-                          setOpenDatePicker(false);
-                        }
-                      }}
-                      disabled={(date) =>
-                        date > new Date() ||
-                        date <
-                          new Date(
-                            new Date().setDate(new Date().getDate() - 5),
-                          ) ||
-                        date.getDate() === new Date().getDate()
-                      }
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="expenseCategory">Expense Category</Label>
-                <SelectBox
-                  label=""
-                  selectedValue={expenseCategory}
-                  onValueChange={setExpenseCategory}
-                  data={expenseCategoriesData}
-                  placeholder="Select the category"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="amount">Amount</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  placeholder="Enter the amount"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
-              </div>
+        <Paper withBorder shadow="sm" p="lg">
+          <Stack gap="md">
+            {fieldError && !FORM_FIELDS.includes(fieldError.field) && (
+              <Alert color="red" variant="light">
+                {fieldError.message}
+              </Alert>
+            )}
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+              <DatePickerInput
+                label="Date"
+                placeholder="Pick a date"
+                valueFormat="DD-MM-YYYY"
+                leftSection={<CalendarIcon size={16} />}
+                value={date}
+                onChange={(value) => {
+                  if (value) {
+                    setDate(dayjs(value).toDate());
+                  }
+                }}
+                excludeDate={isDateDisabled}
+                error={errorFor('date')}
+              />
+              <SelectBox
+                label="Expense Category"
+                selectedValue={expenseCategory}
+                onValueChange={setExpenseCategory}
+                data={expenseCategoriesData}
+                placeholder="Select the category"
+                error={errorFor('category_id', 'name')}
+              />
+              <TextInput
+                label="Amount"
+                type="number"
+                placeholder="Enter the amount"
+                value={amount}
+                onChange={(e) => setAmount(e.currentTarget.value)}
+                error={errorFor('amount')}
+              />
               {isAttachmentAllowed && (
-                <div className="space-y-2">
-                  <Label htmlFor="file">Upload Files (Max 5)</Label>
-                  <Input
-                    id="file"
-                    type="file"
-                    onChange={handleFileChange}
+                <Stack gap="xs">
+                  <FileInput
+                    label="Upload Files (Max 5)"
+                    placeholder="Choose files"
                     accept="image/*,application/pdf"
-                    className="cursor-pointer"
                     multiple
+                    value={files}
+                    onChange={handleFileChange}
+                    error={errorFor('urls')}
                   />
-                  {files.length > 0 && (
-                    <div className="mt-2 space-y-2">
-                      <p className="text-sm text-gray-600">
-                        Selected files ({files.length}/5):
-                      </p>
-                      <div className="space-y-1 max-h-32 overflow-y-auto">
-                        {files.map((file, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center justify-between  p-2 rounded-md"
-                          >
-                            <span className="text-sm truncate flex-1">
-                              {file.name}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-500">
-                                {(file.size / 1024 / 1024).toFixed(2)}MB
-                              </span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setFiles((prev) =>
-                                    prev.filter((_, i) => i !== index),
-                                  );
-                                }}
-                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                              >
-                                ✕
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                  {files.length === 0 && existingUrls.length > 0 && (
+                    <Text size="sm" c="dimmed">
+                      {existingUrls.length} file(s) already attached. Choose
+                      files to replace them.
+                    </Text>
                   )}
-                </div>
+                  {files.length > 0 && (
+                    <Stack gap={4}>
+                      <Text size="sm" c="dimmed">
+                        Selected files ({files.length}/5):
+                      </Text>
+                      <ScrollArea.Autosize mah={128}>
+                        <Stack gap={4}>
+                          {files.map((file, index) => (
+                            <Group
+                              key={index}
+                              justify="space-between"
+                              wrap="nowrap"
+                              gap="xs"
+                              p={6}
+                            >
+                              <Text size="sm" truncate flex={1} miw={0}>
+                                {file.name}
+                              </Text>
+                              <Group gap="xs" wrap="nowrap">
+                                <Text size="xs" c="dimmed">
+                                  {(file.size / 1024 / 1024).toFixed(2)}MB
+                                </Text>
+                                <ActionIcon
+                                  variant="subtle"
+                                  color="red"
+                                  size="sm"
+                                  aria-label="Remove file"
+                                  onClick={() => {
+                                    setFiles((prev) =>
+                                      prev.filter((_, i) => i !== index),
+                                    );
+                                  }}
+                                >
+                                  <X size={14} />
+                                </ActionIcon>
+                              </Group>
+                            </Group>
+                          ))}
+                        </Stack>
+                      </ScrollArea.Autosize>
+                    </Stack>
+                  )}
+                </Stack>
               )}
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="description">Expense Description</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Enter the description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
-                />
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end">
+            </SimpleGrid>
+
+            <Textarea
+              label="Expense Description"
+              placeholder="Enter the description"
+              value={description}
+              onChange={(e) => setDescription(e.currentTarget.value)}
+              error={errorFor('description')}
+              rows={4}
+            />
+
+            <Group justify="flex-end" mt="xs">
               <Button
                 onClick={handleAddExpense}
-                disabled={addExpenseLoading}
-                className="w-full md:w-auto"
+                loading={addExpenseLoading}
+                w={{ base: '100%', md: 'auto' }}
               >
-                {addExpenseLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
-                Add Expense
+                {record ? 'Save & Resend' : 'Add Expense'}
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </Group>
+          </Stack>
+        </Paper>
       )}
-    </div>
+    </Container>
   );
 };
 

@@ -1,33 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import { callApi } from '@/api';
-import { toast } from 'sonner';
 import dayjs from 'dayjs';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Container,
+  Divider,
+  Group,
+  Loader,
+  Modal,
+  Paper,
+  SimpleGrid,
+  Stack,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core';
 import {
-  ArrowLeft,
   Grid3X3,
   Search,
   Calendar,
@@ -38,7 +35,8 @@ import {
   Navigation,
   FileText,
 } from 'lucide-react';
-import Loader from '@/components/Loader';
+import { toast } from '@/lib/toast';
+import { EmptyState, PageHeader, StatusBadge } from '@/components/app';
 
 interface AreaActivity {
   id: number;
@@ -69,69 +67,67 @@ interface GroupedActivity {
   title: string;
   data: AreaActivity[];
 }
-
 const ActivityCard: React.FC<{ item: AreaActivity; onClick: () => void }> = ({
   item,
   onClick,
 }) => {
   return (
     <Card
-      className="cursor-pointer hover:shadow-lg transition-shadow duration-200"
+      withBorder
+      padding="md"
       onClick={onClick}
+      style={{ cursor: 'pointer' }}
     >
-      <CardContent className="p-4 space-y-3">
+      <Stack gap="sm">
         {/* Header with Employee Name and Status */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1">
-            <h3 className="font-semibold text-base flex items-center gap-2">
-              <User className="h-4 w-4 text-blue-600" />
-              {item?.employee?.name || 'Unknown Employee'}
-            </h3>
-          </div>
-          <Badge variant="secondary" className="bg-green-100 text-green-800">
-            Sent
-          </Badge>
-        </div>
+        <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+          <Group gap="xs" wrap="nowrap" flex={1} miw={0}>
+            <User size={16} color="var(--mantine-color-blue-6)" />
+            <Text fw={600}>{item?.employee?.name || 'Unknown Employee'}</Text>
+          </Group>
+          <StatusBadge status="Sent" />
+        </Group>
 
         {/* ID and Date */}
-        <div className="space-y-1 text-sm text-gray-600">
-          <div className="flex items-center gap-2">
-            <Hash className="h-4 w-4" />
-            <span>#{item.id}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            <span>{dayjs(item.date).format('DD/MM/YYYY')}</span>
-          </div>
-        </div>
+        <Stack gap={4} c="dimmed">
+          <Group gap="xs">
+            <Hash size={16} />
+            <Text size="sm">#{item.id}</Text>
+          </Group>
+          <Group gap="xs">
+            <Calendar size={16} />
+            <Text size="sm">{dayjs(item.date).format('DD/MM/YYYY')}</Text>
+          </Group>
+        </Stack>
 
         {/* Location */}
-        <div className="flex items-start gap-2 text-sm text-gray-600">
-          <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
-          <span>
+        <Group gap="xs" align="flex-start" wrap="nowrap" c="dimmed">
+          <MapPin size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+          <Text size="sm">
             {item?.region?.name || 'N/A'} •{' '}
             {item?.territory?.map((t) => t.name).join(', ') || 'N/A'}
-          </span>
-        </div>
+          </Text>
+        </Group>
 
         {/* Area */}
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <FileText className="h-4 w-4" />
-          <span>Area: {item.area_visited}</span>
-        </div>
+        <Group gap="xs" wrap="nowrap" c="dimmed">
+          <FileText size={16} style={{ flexShrink: 0 }} />
+          <Text size="sm">Area: {item.area_visited}</Text>
+        </Group>
 
         {/* Meter and KM */}
-        <div className="flex justify-between text-sm pt-2 border-t mt-2">
-          <div className="flex items-center gap-2 text-gray-600">
-            <Gauge className="h-4 w-4" />
-            <span>Meter: {item.closing_meter}</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-600">
-            <Navigation className="h-4 w-4" />
-            <span>KM: {item.km_traveled}</span>
-          </div>
-        </div>
-      </CardContent>
+        <Divider />
+        <Group justify="space-between" c="dimmed">
+          <Group gap="xs">
+            <Gauge size={16} />
+            <Text size="sm">Meter: {item.closing_meter}</Text>
+          </Group>
+          <Group gap="xs">
+            <Navigation size={16} />
+            <Text size="sm">KM: {item.km_traveled}</Text>
+          </Group>
+        </Group>
+      </Stack>
     </Card>
   );
 };
@@ -141,65 +137,59 @@ const ActivityRow: React.FC<{ item: AreaActivity; onClick: () => void }> = ({
   onClick,
 }) => {
   return (
-    <TableRow
-      className="cursor-pointer hover: transition-colors"
-      onClick={onClick}
-    >
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Hash className="h-4 w-4 text-gray-400" />
-          <span className="font-medium">#{item.id}</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <User className="h-4 w-4 text-blue-600" />
-          <span className="font-medium">
-            {item?.employee?.name || 'Unknown'}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2 text-gray-600">
-          <Calendar className="h-4 w-4" />
-          <span>{dayjs(item.date).format('DD/MM/YYYY')}</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2 text-gray-600">
-          <MapPin className="h-4 w-4" />
-          <span>
+    <Table.Tr onClick={onClick} style={{ cursor: 'pointer' }}>
+      <Table.Td>
+        <Group gap="xs" wrap="nowrap">
+          <Hash size={16} color="var(--mantine-color-gray-5)" />
+          <Text fw={500}>#{item.id}</Text>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap="xs" wrap="nowrap">
+          <User size={16} color="var(--mantine-color-blue-6)" />
+          <Text fw={500}>{item?.employee?.name || 'Unknown'}</Text>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap="xs" wrap="nowrap" c="dimmed">
+          <Calendar size={16} />
+          <Text size="sm">{dayjs(item.date).format('DD/MM/YYYY')}</Text>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap="xs" wrap="nowrap" c="dimmed">
+          <MapPin size={16} style={{ flexShrink: 0 }} />
+          <Text size="sm">
             {item?.region?.name} -{' '}
             {item?.territory?.map((t) => t.name).join(', ')}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="text-gray-600">{item.area_visited}</div>
-      </TableCell>
-      <TableCell>
-        <div className="space-y-1 text-sm text-gray-600">
-          <div className="flex items-center gap-2">
-            <Gauge className="h-3 w-3" />
-            {item.closing_meter}
-          </div>
-          <div className="flex items-center gap-2">
-            <Navigation className="h-3 w-3" />
-            {item.km_traveled} km
-          </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        <Badge variant="secondary" className="bg-green-100 text-green-800">
-          Sent
-        </Badge>
-      </TableCell>
-    </TableRow>
+          </Text>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm" c="dimmed">
+          {item.area_visited}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        <Stack gap={4} c="dimmed">
+          <Group gap="xs" wrap="nowrap">
+            <Gauge size={12} />
+            <Text size="sm">{item.closing_meter}</Text>
+          </Group>
+          <Group gap="xs" wrap="nowrap">
+            <Navigation size={12} />
+            <Text size="sm">{item.km_traveled} km</Text>
+          </Group>
+        </Stack>
+      </Table.Td>
+      <Table.Td>
+        <StatusBadge status="Sent" />
+      </Table.Td>
+    </Table.Tr>
   );
 };
 
 const RMAreaActivities: React.FC = () => {
-  const navigate = useNavigate();
   const user = useSelector(selectUser);
   const [activities, setActivities] = useState<AreaActivity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -351,247 +341,186 @@ const RMAreaActivities: React.FC = () => {
 
   const groupedActivities = createGroupedActivities();
 
+
+  const isGrouped = Object.values(groupBy).some(Boolean);
+
   return (
-    <div className="min-h-screen  p-4">
-      <div className="container mx-auto max-w-7xl">
-        <Card className="shadow-lg border-0">
-          <CardHeader className="bg-white border-b">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => navigate(-1)}
-                  aria-label="Go back"
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
-                <CardTitle className="text-2xl font-bold">
-                  Area Activities
-                </CardTitle>
-              </div>
-              <div className="flex items-center gap-2">
-                {activities.length > 0 && (
-                  <Dialog open={showGrouping} onOpenChange={setShowGrouping}>
-                    <DialogTrigger asChild>
-                      <Button
-                        variant={
-                          Object.values(groupBy).some(Boolean)
-                            ? 'default'
-                            : 'outline'
-                        }
-                        size="icon"
-                        className={
-                          Object.values(groupBy).some(Boolean)
-                            ? 'bg-blue-500 hover:bg-blue-600'
-                            : ''
-                        }
-                      >
-                        <Grid3X3 className="h-4 w-4" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Group Area Activities</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <p className="text-sm text-gray-600 text-center">
-                          Select multiple grouping options
-                        </p>
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id="group-by-territories"
-                            checked={tempGroupBy.territories}
-                            onCheckedChange={() =>
-                              toggleTempGrouping('territories')
-                            }
-                          />
-                          <label
-                            htmlFor="group-by-territories"
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            Group by Territories
-                          </label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id="group-by-date"
-                            checked={tempGroupBy.date}
-                            onCheckedChange={() => toggleTempGrouping('date')}
-                          />
-                          <label
-                            htmlFor="group-by-date"
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            Group by Date
-                          </label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id="group-by-employees"
-                            checked={tempGroupBy.employees}
-                            onCheckedChange={() =>
-                              toggleTempGrouping('employees')
-                            }
-                          />
-                          <label
-                            htmlFor="group-by-employees"
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            Group by Employees
-                          </label>
-                        </div>
-                        <div className="flex gap-2 pt-2">
-                          <Button onClick={applyGrouping} className="flex-1">
-                            Apply Grouping
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setTempGroupBy({
-                                territories: false,
-                                date: false,
-                                employees: false,
-                              });
-                              setGroupBy({
-                                territories: false,
-                                date: false,
-                                employees: false,
-                              });
-                              setShowGrouping(false);
-                            }}
-                            className="flex-1"
-                          >
-                            Clear
-                          </Button>
-                        </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+    <Container size="xl" px={0}>
+      <PageHeader
+        title="Area Activities"
+        back
+        actions={
+          activities.length > 0 && (
+            <ActionIcon
+              variant={isGrouped ? 'filled' : 'default'}
+              color={isGrouped ? 'blue' : undefined}
+              size="lg"
+              aria-label="Group Area Activities"
+              onClick={() => setShowGrouping(true)}
+            >
+              <Grid3X3 size={16} />
+            </ActionIcon>
+          )
+        }
+      />
+
+      <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'lg' }}>
+        {/* Search Bar */}
+        <TextInput
+          mb="lg"
+          placeholder="Search by employee, region, or territory..."
+          leftSection={<Search size={16} />}
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+        />
+
+        {/* Active Grouping Summary */}
+        {isGrouped && (
+          <Alert color="blue" variant="light" p="sm" mb="lg">
+            <Group gap="xs">
+              <Text size="sm" fw={500}>
+                Active:
+              </Text>
+              {groupBy.territories && (
+                <Badge variant="light" color="gray">
+                  Grouped by Territories
+                </Badge>
+              )}
+              {groupBy.date && (
+                <Badge variant="light" color="gray">
+                  Grouped by Date
+                </Badge>
+              )}
+              {groupBy.employees && (
+                <Badge variant="light" color="gray">
+                  Grouped by Employees
+                </Badge>
+              )}
+            </Group>
+          </Alert>
+        )}
+
+        {loading ? (
+          <Group justify="center" h={256}>
+            <Loader />
+          </Group>
+        ) : filteredActivities.length === 0 ? (
+          <EmptyState
+            icon={<FileText size={32} />}
+            title={
+              search
+                ? 'No activities found matching your search.'
+                : 'No activities found.'
+            }
+            description="Try adjusting your filters or grouping."
+          />
+        ) : (
+          <Stack gap="xl">
+            {groupedActivities.map((group) => (
+              <Stack key={group.title || 'all-activities'} gap="md">
+                {group.title && (
+                  <Box>
+                    <Title order={4} mb="xs">
+                      {group.title}
+                    </Title>
+                    <Divider />
+                  </Box>
                 )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6">
-            {/* Search Bar */}
-            <div className="mb-6">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search by employee, region, or territory..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
 
-            {/* Active Grouping Summary */}
-            {Object.values(groupBy).some(Boolean) && (
-              <div className="mb-6 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex flex-wrap items-center gap-2 text-sm text-blue-800">
-                  <span className="font-medium">Active:</span>
-                  {groupBy.territories && (
-                    <Badge variant="secondary">Grouped by Territories</Badge>
-                  )}
-                  {groupBy.date && (
-                    <Badge variant="secondary">Grouped by Date</Badge>
-                  )}
-                  {groupBy.employees && (
-                    <Badge variant="secondary">Grouped by Employees</Badge>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {loading ? (
-              <div className="flex justify-center items-center h-64">
-                <Loader
-                  loading={true}
-                  className="h-8 w-8 animate-spin text-blue-600"
-                />
-              </div>
-            ) : filteredActivities.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
-                  {search
-                    ? 'No activities found matching your search.'
-                    : 'No activities found.'}
-                </p>
-                <p className="text-gray-400 text-sm mt-2">
-                  Try adjusting your filters or grouping.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {groupedActivities.map((group) => (
-                  <div
-                    key={group.title || 'all-activities'}
-                    className="space-y-4"
-                  >
-                    {group.title && (
-                      <h2 className="text-xl font-semibold text-gray-700 border-b pb-2">
-                        {group.title}
-                      </h2>
-                    )}
-
-                    {/* Desktop Table View */}
-                    <div className="hidden md:block overflow-x-auto rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="font-semibold">ID</TableHead>
-                            <TableHead className="font-semibold">
-                              Employee
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Date
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Location
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Area
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Meter/KM
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Status
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {group.data.map((activity) => (
-                            <ActivityRow
-                              key={activity.id}
-                              item={activity}
-                              onClick={() => handleActivityClick(activity)}
-                            />
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    {/* Mobile Card View */}
-                    <div className="md:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Desktop Table View */}
+                <Table.ScrollContainer minWidth={860} visibleFrom="md">
+                  <Table highlightOnHover>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>ID</Table.Th>
+                        <Table.Th>Employee</Table.Th>
+                        <Table.Th>Date</Table.Th>
+                        <Table.Th>Location</Table.Th>
+                        <Table.Th>Area</Table.Th>
+                        <Table.Th>Meter/KM</Table.Th>
+                        <Table.Th>Status</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
                       {group.data.map((activity) => (
-                        <ActivityCard
+                        <ActivityRow
                           key={activity.id}
                           item={activity}
                           onClick={() => handleActivityClick(activity)}
                         />
                       ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+                    </Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
+
+                {/* Mobile Card View */}
+                <SimpleGrid
+                  cols={{ base: 1, sm: 2 }}
+                  spacing="md"
+                  hiddenFrom="md"
+                >
+                  {group.data.map((activity) => (
+                    <ActivityCard
+                      key={activity.id}
+                      item={activity}
+                      onClick={() => handleActivityClick(activity)}
+                    />
+                  ))}
+                </SimpleGrid>
+              </Stack>
+            ))}
+          </Stack>
+        )}
+      </Paper>
+
+      <Modal
+        opened={showGrouping}
+        onClose={() => setShowGrouping(false)}
+        title={<Text fw={600}>Group Area Activities</Text>}
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed" ta="center">
+            Select multiple grouping options
+          </Text>
+          <Checkbox
+            label="Group by Territories"
+            checked={tempGroupBy.territories}
+            onChange={() => toggleTempGrouping('territories')}
+          />
+          <Checkbox
+            label="Group by Date"
+            checked={tempGroupBy.date}
+            onChange={() => toggleTempGrouping('date')}
+          />
+          <Checkbox
+            label="Group by Employees"
+            checked={tempGroupBy.employees}
+            onChange={() => toggleTempGrouping('employees')}
+          />
+          <Group grow gap="sm">
+            <Button onClick={applyGrouping}>Apply Grouping</Button>
+            <Button
+              variant="default"
+              onClick={() => {
+                setTempGroupBy({
+                  territories: false,
+                  date: false,
+                  employees: false,
+                });
+                setGroupBy({
+                  territories: false,
+                  date: false,
+                  employees: false,
+                });
+                setShowGrouping(false);
+              }}
+            >
+              Clear
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </Container>
   );
 };
 

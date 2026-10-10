@@ -1,39 +1,89 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { toast } from 'sonner';
-import { format } from 'date-fns';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Loader2 } from 'lucide-react';
-import { callApi, callServerAPI } from '@/api';
-import { selectUser } from '@/redux/slices/AuthSlice';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
+  Alert,
+  Button,
+  Container,
+  FileInput,
+  Group,
+  Loader,
+  Paper,
+  Radio,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
 import { CalendarIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { uploadToCloudinary } from '@/utils';
 import dayjs from 'dayjs';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
+import { selectUser } from '@/redux/slices/AuthSlice';
+import { uploadToCloudinary } from '@/utils';
+import { toast } from '@/lib/toast';
+import { PageHeader } from '@/components/app';
+
+const RESOURCE = '/v2/fleet/services';
+
+// Fields with their own input; any other error is shown in an alert.
+const FORM_FIELDS = [
+  'date',
+  'odometer_value',
+  'cost',
+  'liters',
+  'payment_method',
+  'url',
+];
+
+// Same rule the calendar had before: no future dates, nothing older than
+// five days, and not today's day of the month.
+const isDateDisabled = (value: string) => {
+  const date = dayjs(value).toDate();
+  return (
+    date > new Date() ||
+    date < new Date(new Date().setDate(new Date().getDate() - 5)) ||
+    date.getDate() === new Date().getDate()
+  );
+};
 
 const AddFuel = () => {
   const navigate = useNavigate();
-  const { vehicle, user, company } = useSelector(selectUser);
+  // A failed fuel record opened from the list to be fixed and sent again.
+  const record = useLocation().state?.record;
+  const { vehicle, user } = useSelector(selectUser);
   const [lastReading, setLastReading] = useState('');
-  const [currentReading, setCurrentReading] = useState('');
-  const [fuelAmount, setFuelAmount] = useState('');
-  const [fuelLitres, setFuelLitres] = useState('');
-  const [date, setDate] = useState(new Date());
-  const [openDatePicker, setOpenDatePicker] = useState(false);
+  const [currentReading, setCurrentReading] = useState(
+    String(record?.odometer_value ?? ''),
+  );
+  const [fuelAmount, setFuelAmount] = useState(String(record?.cost ?? ''));
+  const [fuelLitres, setFuelLitres] = useState(String(record?.liters ?? ''));
+  const [date, setDate] = useState<Date>(
+    record?.date ? dayjs(record.date.slice(0, 10)).toDate() : new Date(),
+  );
   const [loading, setLoading] = useState(false);
   const [buttonLoading, setButtonLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState(
+    record?.payment_method === 'paid_by_cash'
+      ? 'cash'
+      : record?.payment_method === 'paid_by_mobility_card'
+        ? 'card'
+        : '',
+  );
+  // Receipt already uploaded for the record being edited.
+  const existingUrl: string = record?.url || '';
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two records.
+  const requestId = useRef(newRequestId());
   const [serviceType, setServiceType] = useState<{
     id: string;
     name: string;
@@ -60,15 +110,10 @@ const AddFuel = () => {
     };
 
     setLoading(true);
-    callServerAPI(
-      'POST',
-      `/get/previous/odometer`,
-      {
-        data: {
-          service_type_id: Number(serviceType.id),
-          vehicle_id: Number(vehicle?.vehicle_id),
-        },
-      },
+    callApi(
+      'GET',
+      `/v2/lookups/previous-odometer?service_type_id=${Number(serviceType.id)}&vehicle_id=${Number(vehicle?.vehicle_id)}`,
+      null,
       onSuccess,
       onError,
     );
@@ -124,8 +169,7 @@ const AddFuel = () => {
     fetchServiceTypes();
   }, []);
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
+  const handleFileChange = (selectedFile: File | null) => {
     if (
       selectedFile &&
       (selectedFile.type.startsWith('image/') ||
@@ -158,7 +202,7 @@ const AddFuel = () => {
       return;
     }
 
-    if (!file && attachmentAllowed) {
+    if (!file && !existingUrl && attachmentAllowed) {
       toast.error('Please upload a receipt image');
       return;
     }
@@ -194,207 +238,166 @@ const AddFuel = () => {
       }
     }
 
-    const data = {
+    const body = {
+      category: 'fuel',
       name: serviceType.name,
       service_type_id: Number(serviceType.id),
-      vehicle_id: Number(vehicle?.vehicle_id),
-      date: dayjs(date).format('DD-MM-YYYY'),
+      date: dayjs(date).format('YYYY-MM-DD'),
       cost: Number(fuelAmount),
       liters: Number(fuelLitres),
-      employee_id: Number(user.employee_id),
-      id: 0,
-      odometer_value: currentReading,
+      odometer_value: Number(currentReading),
       payment_method:
         paymentMethod === 'cash' ? 'paid_by_cash' : 'paid_by_mobility_card',
-      url: uploadImage || '',
-      company_id: Number(company.id),
+      url: uploadImage || existingUrl,
     };
 
-    const onCreateSuccess = () => {
+    const onSuccess = () => {
       setLoading(false);
       setButtonLoading(false);
-      toast.success('Fuel added successfully');
-      navigate(-1);
+      toast.success(
+        record
+          ? 'Fuel record updated and queued'
+          : 'Fuel record saved and queued',
+      );
+      navigate('/fuel');
     };
 
-    const onCreateError = (error: { message?: string; error?: string }) => {
+    const onError = (error) => {
       setLoading(false);
       setButtonLoading(false);
-      toast.error(`Failed to add fuel: ${error.message || 'Unknown error'}`);
+      const message = errorMessage(error, 'Failed to add fuel');
+      setFieldError({ field: error?.field, message });
+      toast.error(message);
     };
 
-    // Call API
-    const onSuccess = (response: {
-      data: {
-        expense: Array<{
-          id: number;
-          state: string;
-        }>;
-      };
-    }) => {
+    setFieldError(null);
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
       callApi(
         'POST',
-        '/fleet/service',
-        {
-          ...data,
-          id: response.data.expense[0].id,
-          odooStatus: response.data.expense[0].state,
-          category: 'fuel',
-          date: date,
-          url: uploadImage || '',
-        },
-        onCreateSuccess,
-        onCreateError,
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
       );
-    };
-
-    const onError = (error: { message?: string; error?: string }) => {
-      setLoading(false);
-      setButtonLoading(false);
-      toast.error(`Failed to add fuel: ${error.message || 'Unknown error'}`);
-    };
-
-    callServerAPI('POST', '/post/fleet', { data }, onSuccess, onError);
+    }
   };
 
+  const errorFor = (field: string) =>
+    fieldError?.field === field ? fieldError.message : undefined;
+
   return (
-    <div className="min-h-screen  flex items-center justify-center p-4">
+    <Container size="sm" px={0}>
+      <PageHeader title={record ? 'Edit Fuel' : 'Add Fuel'} back />
       {loading ? (
-        <Loader2 className="h-8 w-8 animate-spin" />
+        <Group justify="center" h={256}>
+          <Loader />
+        </Group>
       ) : (
-        <Card className="w-full max-w-2xl">
-          <CardHeader>
-            <CardTitle>Add Fuel</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
-                <Popover open={openDatePicker} onOpenChange={setOpenDatePicker}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'w-full justify-start text-left font-normal',
-                        !date && 'text-muted-foreground',
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {date ? format(date, 'dd-MM-yyyy') : 'Pick a date'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={date}
-                      disabled={(date) =>
-                        date > new Date() ||
-                        date <
-                          new Date(
-                            new Date().setDate(new Date().getDate() - 5),
-                          ) ||
-                        date.getDate() === new Date().getDate()
-                      }
-                      onSelect={(selectedDate) => {
-                        if (selectedDate) {
-                          setDate(selectedDate);
-                          setOpenDatePicker(false);
-                        }
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lastReading">Last Reading</Label>
-                <Input
-                  id="lastReading"
-                  placeholder="Last reading"
-                  value={lastReading}
-                  disabled
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="currentReading">Current Reading</Label>
-                <Input
-                  id="currentReading"
-                  type="number"
-                  placeholder="Enter current reading"
-                  value={currentReading}
-                  onChange={(e) => setCurrentReading(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="fuelAmount">Fuel Amount</Label>
-                <Input
-                  id="fuelAmount"
-                  type="number"
-                  placeholder="Enter fuel amount"
-                  value={fuelAmount}
-                  onChange={(e) => setFuelAmount(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="fuelLitres">Fuel Litres</Label>
-                <Input
-                  id="fuelLitres"
-                  type="number"
-                  placeholder="Enter fuel litres"
-                  value={fuelLitres}
-                  onChange={(e) => setFuelLitres(e.target.value)}
-                />
-              </div>
+        <Paper withBorder shadow="sm" p="lg">
+          <Stack gap="md">
+            {fieldError && !FORM_FIELDS.includes(fieldError.field) && (
+              <Alert color="red" variant="light">
+                {fieldError.message}
+              </Alert>
+            )}
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+              <DatePickerInput
+                label="Date"
+                placeholder="Pick a date"
+                valueFormat="DD-MM-YYYY"
+                leftSection={<CalendarIcon size={16} />}
+                value={date}
+                onChange={(value) => {
+                  if (value) {
+                    setDate(dayjs(value).toDate());
+                  }
+                }}
+                excludeDate={isDateDisabled}
+                error={errorFor('date')}
+              />
+              <TextInput
+                label="Last Reading"
+                placeholder="Last reading"
+                value={lastReading}
+                disabled
+              />
+              <TextInput
+                label="Current Reading"
+                type="number"
+                placeholder="Enter current reading"
+                value={currentReading}
+                onChange={(e) => setCurrentReading(e.currentTarget.value)}
+                error={errorFor('odometer_value')}
+              />
+              <TextInput
+                label="Fuel Amount"
+                type="number"
+                placeholder="Enter fuel amount"
+                value={fuelAmount}
+                onChange={(e) => setFuelAmount(e.currentTarget.value)}
+                error={errorFor('cost')}
+              />
+              <TextInput
+                label="Fuel Litres"
+                type="number"
+                placeholder="Enter fuel litres"
+                value={fuelLitres}
+                onChange={(e) => setFuelLitres(e.currentTarget.value)}
+                error={errorFor('liters')}
+              />
               {attachmentAllowed && (
-                <div className="space-y-2">
-                  <Label htmlFor="file">Upload Receipt</Label>
-                  <Input
-                    id="file"
-                    type="file"
+                <Stack gap={4}>
+                  <FileInput
+                    label="Upload Receipt"
+                    placeholder="Choose file"
                     accept="image/*,application/pdf"
+                    value={file}
                     onChange={handleFileChange}
-                    className="cursor-pointer"
+                    error={errorFor('url')}
                   />
-                  {file && (
-                    <p className="text-sm text-gray-600">
+                  {file ? (
+                    <Text size="sm" c="dimmed">
                       Selected: {file.name}
-                    </p>
+                    </Text>
+                  ) : (
+                    existingUrl && (
+                      <Text size="sm" c="dimmed">
+                        A receipt is already attached. Choose a file to replace
+                        it.
+                      </Text>
+                    )
                   )}
-                </div>
+                </Stack>
               )}
-              <div className="space-y-2 md:col-span-2">
-                <Label>Payment Method</Label>
-                <RadioGroup
-                  value={paymentMethod}
-                  onValueChange={setPaymentMethod}
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="cash" id="cash" />
-                    <Label htmlFor="cash">Paid by Cash</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="card" id="card" />
-                    <Label htmlFor="card">Paid by Mobility Card</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end">
+            </SimpleGrid>
+
+            <Radio.Group
+              label="Payment Method"
+              value={paymentMethod}
+              onChange={setPaymentMethod}
+              error={errorFor('payment_method')}
+            >
+              <Stack gap="xs" mt="xs">
+                <Radio value="cash" label="Paid by Cash" />
+                <Radio value="card" label="Paid by Mobility Card" />
+              </Stack>
+            </Radio.Group>
+
+            <Group justify="flex-end" mt="xs">
               <Button
                 onClick={handleAddFuel}
-                disabled={buttonLoading}
-                className="w-full md:w-auto"
+                loading={buttonLoading}
+                w={{ base: '100%', md: 'auto' }}
               >
-                {buttonLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
-                Submit
+                {record ? 'Save & Resend' : 'Submit'}
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </Group>
+          </Stack>
+        </Paper>
       )}
-    </div>
+    </Container>
   );
 };
 

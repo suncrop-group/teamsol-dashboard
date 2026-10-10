@@ -5,6 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TeamSol - Web</title>
+    <script>
+      // Apply the saved (or system) colour scheme before the app renders, so
+      // dark mode does not flash light first. Key matches Mantine's default.
+      try {
+        var saved = localStorage.getItem('mantine-color-scheme-value');
+        var dark =
+          saved === 'dark' ||
+          ((!saved || saved === 'auto') &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute(
+          'data-mantine-color-scheme',
+          dark ? 'dark' : 'light',
+        );
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

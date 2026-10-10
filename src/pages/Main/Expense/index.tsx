@@ -1,30 +1,22 @@
 import { useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
-import { selectUser } from '@/redux/slices/AuthSlice';
-import { callApi, callServerAPI } from '@/api';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNavigate } from 'react-router-dom';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
+  Badge,
+  Box,
+  Button,
+  Card,
+  Container,
+  Group,
+  Image,
+  Modal,
+  Paper,
+  Skeleton,
+  Stack,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
+  Text,
+  TextInput,
+} from '@mantine/core';
 import {
-  Loader2,
   Search,
   Plus,
   Calendar,
@@ -33,289 +25,259 @@ import {
   X,
   Image as ImageIcon,
 } from 'lucide-react';
-import { priceFormatter } from '@/utils';
-import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { TableSkeleton } from '@/components/ui/table-skeleton';
-import { DateFilter } from '@/components/DateFilter';
-import type { DateRange } from 'react-day-picker';
+import { callApi } from '@/api';
+import {
+  errorMessage,
+  isFailed,
+  isQueued,
+  isUnsynced,
+  recordRef,
+  useQueuedRefresh,
+} from '@/api/v2';
+import { priceFormatter } from '@/utils';
+import { toast } from '@/lib/toast';
+import { DateFilter, type DateRange } from '@/components/DateFilter';
+import {
+  ConfirmModal,
+  EmptyState,
+  FailedActions,
+  PageHeader,
+  StatusBadge,
+} from '@/components/app';
 
-const stylesByStatus = {
-  sent: 'bg-green-100 text-green-800 hover:bg-green-200',
-  pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  canceled: 'bg-red-100 text-red-800 hover:bg-red-200',
-  quotation: 'bg-blue-100 text-blue-800 hover:bg-blue-200',
-  approved: 'bg-green-100 text-green-800 hover:bg-green-200',
-  draft: 'bg-red-100 text-red-800 hover:bg-red-200',
-  confirmed: 'bg-green-100 text-green-800 hover:bg-green-200',
-  approval: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  done: 'bg-green-100 text-green-800 hover:bg-green-200',
-  rejected: 'bg-red-100 text-red-800 hover:bg-red-200',
-  cancelled: 'bg-red-100 text-red-800 hover:bg-red-200',
+const RESOURCE = '/v2/expenses';
+
+interface ExpenseItem {
+  _id: string;
+  id?: number | string;
+  jobId?: string;
+  name: string;
+  description?: string;
+  amount?: number;
+  date: string;
+  odooStatus?: string;
+  status?: string;
+  syncError?: string;
+  urls?: string[];
+}
+
+interface ExpenseItemProps {
+  item: ExpenseItem;
+  cancelOrder: (item: ExpenseItem) => void;
+  onEdit: (item: ExpenseItem) => void;
+  onChanged: () => void;
+  onViewImages: (urls: string[]) => void;
+}
+
+// The v2 backend stores an expense's day as `DD-MM-YYYY` text; older records
+// hold an ISO date.
+const expenseDate = (value?: string) => {
+  const parts = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value || '');
+  return parts
+    ? dayjs(new Date(Number(parts[3]), Number(parts[2]) - 1, Number(parts[1])))
+    : dayjs(value);
 };
 
-// Mobile Card Component
-const ExpenseCard = ({
+// An expense still waiting in the queue can be cancelled; once it is in Odoo,
+// only while Odoo has it as a draft.
+const canCancel = (item: ExpenseItem) =>
+  isQueued(item) || (!isUnsynced(item) && item.odooStatus === 'draft');
+
+// Our status always; Odoo's own state once the expense is there.
+const Statuses = ({
+  item,
+  size,
+  align,
+}: {
+  item: ExpenseItem;
+  size?: string;
+  align?: string;
+}) => (
+  <Stack gap={4} align={align}>
+    <StatusBadge status={item.status} size={size} />
+    {!isUnsynced(item) && <StatusBadge status={item.odooStatus} size={size} />}
+  </Stack>
+);
+
+const Actions = ({
   item,
   cancelOrder,
+  onEdit,
+  onChanged,
   onViewImages,
-}: {
-  item: {
-    id: string;
-    name: string;
-    description?: string;
-    amount?: number;
-    createdAt?: string;
-    date: string;
-    odooStatus?: string;
-    status?: string;
-    urls?: string[];
-  };
-  cancelOrder: (id: string) => void;
-  onViewImages: (urls: string[]) => void;
-}) => {
+  card,
+}: ExpenseItemProps & { card?: boolean }) => {
+  const images = item.urls && item.urls.length > 0 && (
+    <Button
+      variant="default"
+      size={card ? 'sm' : 'xs'}
+      leftSection={<ImageIcon size={card ? 16 : 14} />}
+      onClick={() => onViewImages(item.urls)}
+    >
+      {card ? `Images (${item.urls.length})` : item.urls.length}
+    </Button>
+  );
+
+  if (isFailed(item)) {
+    return (
+      <Stack gap="xs" align={card ? 'stretch' : 'flex-start'}>
+        {images}
+        <FailedActions
+          item={item}
+          resource={RESOURCE}
+          onEdit={() => onEdit(item)}
+          onChanged={onChanged}
+        />
+      </Stack>
+    );
+  }
+
   return (
-    <Card className="hover:shadow-lg transition-shadow duration-200">
-      <CardContent className="p-4 space-y-3">
-        {/* Header with Name and Statuses */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1">
-            <h3 className="font-semibold text-base">{item.name}</h3>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-medium text-gray-500">PKR</span>
-              <span className="font-medium text-green-600">
+    <Group gap="xs" wrap="nowrap" grow={card}>
+      {images}
+      <Button
+        color="red"
+        variant="light"
+        size={card ? 'sm' : 'xs'}
+        leftSection={card ? <X size={16} /> : undefined}
+        onClick={() => cancelOrder(item)}
+        disabled={!canCancel(item)}
+      >
+        Cancel
+      </Button>
+    </Group>
+  );
+};
+
+const COLUMNS = ['ID', 'Name', 'Amount', 'Date', 'Status', 'Actions'];
+
+const ExpenseTableHead = () => (
+  <Table.Thead>
+    <Table.Tr>
+      {COLUMNS.map((column) => (
+        <Table.Th key={column}>{column}</Table.Th>
+      ))}
+    </Table.Tr>
+  </Table.Thead>
+);
+
+// Mobile Card Component
+const ExpenseCard = (props: ExpenseItemProps) => {
+  const { item } = props;
+  return (
+    <Card withBorder padding="md">
+      <Stack gap="sm">
+        <Group justify="space-between" align="flex-start" wrap="nowrap">
+          <Box>
+            <Text fw={600}>{item.name}</Text>
+            <Group gap={6} mt={4}>
+              <Text size="xs" fw={500} c="dimmed">
+                PKR
+              </Text>
+              <Text fw={500} c="green">
                 {priceFormatter(item.amount)}
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1 items-end">
-            <Badge
-              className={`${stylesByStatus[item.status?.toLowerCase()]} border-0 text-xs capitalize`}
-            >
-              {item.status}
-            </Badge>
-            <Badge
-              className={`${stylesByStatus[item.odooStatus?.toLowerCase()]} border-0 text-xs capitalize`}
-            >
-              {item.odooStatus}
-            </Badge>
-          </div>
-        </div>
+              </Text>
+            </Group>
+          </Box>
+          <Statuses item={item} size="sm" align="flex-end" />
+        </Group>
 
-        {/* ID and Date */}
-        <div className="space-y-1 text-sm text-gray-600">
-          <div className="flex items-center gap-2">
-            <Hash className="h-4 w-4" />
-            <span>#{item.id}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            <span>{dayjs(item.date).format('DD/MM/YYYY')}</span>
-          </div>
-        </div>
+        <Stack gap={4}>
+          <Group gap="xs" c="dimmed">
+            <Hash size={16} />
+            <Text size="sm">{recordRef(item)}</Text>
+          </Group>
+          <Group gap="xs" c="dimmed">
+            <Calendar size={16} />
+            <Text size="sm">{expenseDate(item.date).format('DD/MM/YYYY')}</Text>
+          </Group>
+        </Stack>
 
-        {/* Description */}
         {item.description && (
-          <div className="flex items-start gap-2 text-sm">
-            <FileText className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
-            <p className="text-gray-600 line-clamp-2">{item.description}</p>
-          </div>
+          <Group gap="xs" align="flex-start" wrap="nowrap" c="dimmed">
+            <FileText size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+            <Text size="sm" lineClamp={2}>
+              {item.description}
+            </Text>
+          </Group>
         )}
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-2 border-t">
-          {item.urls && item.urls.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onViewImages(item.urls)}
-              className="flex-1"
-            >
-              <ImageIcon className="h-4 w-4 mr-1" />
-              Images ({item.urls.length})
-            </Button>
-          )}
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => cancelOrder(item.id)}
-            disabled={item.odooStatus !== 'draft'}
-            className="flex-1"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Cancel
-          </Button>
-        </div>
-      </CardContent>
+        <Actions {...props} card />
+      </Stack>
     </Card>
   );
 };
 
 // Desktop Table Row Component
-const ExpenseRow = ({
-  item,
-  cancelOrder,
-  onViewImages,
-}: {
-  item: {
-    id: string;
-    name: string;
-    description?: string;
-    amount?: number;
-    createdAt?: string;
-    odooStatus?: string;
-    status?: string;
-    urls?: string[];
-    date: string;
-  };
-  cancelOrder: (id: string) => void;
-  onViewImages: (urls: string[]) => void;
-}) => {
+const ExpenseRow = (props: ExpenseItemProps) => {
+  const { item } = props;
   return (
-    <TableRow className="hover: transition-colors">
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Hash className="h-4 w-4 text-gray-400" />
-          <span className="font-medium">#{item.id}</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div>
-          <div className="font-medium">{item.name}</div>
-          {item.description && (
-            <div className="text-xs text-gray-500 line-clamp-1 mt-1">
-              {item.description}
-            </div>
-          )}
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-gray-500">PKR</span>
-          <span className="font-semibold text-green-600">
+    <Table.Tr>
+      <Table.Td>
+        <Text fw={500}>{recordRef(item)}</Text>
+      </Table.Td>
+      <Table.Td>
+        <Text fw={500}>{item.name}</Text>
+        {item.description && (
+          <Text size="xs" c="dimmed" lineClamp={1} mt={4}>
+            {item.description}
+          </Text>
+        )}
+      </Table.Td>
+      <Table.Td>
+        <Group gap={6} wrap="nowrap">
+          <Text size="xs" fw={500} c="dimmed">
+            PKR
+          </Text>
+          <Text fw={600} c="green">
             {priceFormatter(item.amount)}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <Calendar className="h-4 w-4" />
-          <div>
-            <div>{dayjs(item.date).format('DD/MM/YYYY')}</div>
-          </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex flex-col gap-1">
-          <Badge
-            className={`${stylesByStatus[item.status?.toLowerCase()]} border-0 w-fit capitalize`}
-          >
-            {item.status}
-          </Badge>
-          <Badge
-            className={`${stylesByStatus[item.odooStatus?.toLowerCase()]} border-0 w-fit capitalize`}
-          >
-            {item.odooStatus}
-          </Badge>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex gap-2">
-          {item.urls && item.urls.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onViewImages(item.urls)}
-            >
-              <ImageIcon className="h-4 w-4 mr-1" />
-              {item.urls.length}
-            </Button>
-          )}
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => cancelOrder(item.id)}
-            disabled={item.odooStatus !== 'draft'}
-          >
-            Cancel
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
+          </Text>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm" c="dimmed">
+          {expenseDate(item.date).format('DD/MM/YYYY')}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        <Statuses item={item} />
+      </Table.Td>
+      <Table.Td maw={320}>
+        <Actions {...props} />
+      </Table.Td>
+    </Table.Tr>
   );
 };
 
 const Expenses = () => {
-  const [expensesOrders, setExpensesOrders] = useState<
-    {
-      id: string;
-      name: string;
-      description?: string;
-      amount?: number;
-      createdAt?: string;
-      date: string;
-      odooStatus?: string;
-      status?: string;
-      urls?: string[];
-    }[]
-  >([]);
+  const [expensesOrders, setExpensesOrders] = useState<ExpenseItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState<ExpenseItem | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
   const navigate = useNavigate();
-  const [filteredData, setFilteredData] = useState<
-    {
-      id: string;
-      name: string;
-      description?: string;
-      amount?: number;
-      createdAt?: string;
-      date: string;
-      odooStatus?: string;
-      status?: string;
-      urls?: string[];
-    }[]
-  >([]);
+  const [filteredData, setFilteredData] = useState<ExpenseItem[]>([]);
   const [search, setSearch] = useState('');
   const [selectedDateRange, setSelectedDateRange] = useState<
     DateRange | undefined
   >(undefined);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const user = useSelector(selectUser);
-  const [openDialog, setOpenDialog] = useState(false);
 
-  const fetchExpensesOrders = () => {
-    setLoading(true);
+  // `quiet` reloads in place, without swapping the table for a skeleton.
+  const fetchExpensesOrders = (quiet = false) => {
+    if (!quiet) setLoading(true);
     callApi(
       'GET',
-      '/expense?withoutEvent=true',
+      `${RESOURCE}?withoutEvent=true&limit=200`,
       null,
-      (response: {
-        data: {
-          id: string;
-          name: string;
-          description?: string;
-          amount?: number;
-          createdAt?: string;
-          date: string;
-          odooStatus?: string;
-          status?: string;
-          urls?: string[];
-        }[];
-      }) => {
+      (response: { data: ExpenseItem[] }) => {
         setLoading(false);
-        response.data.sort((a, b) => {
-          if (!a.createdAt || !b.createdAt) return 0;
-          return (
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-        });
-        setExpensesOrders(response.data);
+        setExpensesOrders(response.data || []);
       },
       () => {
         setLoading(false);
-        toast.error('Error fetching expenses orders');
+        if (!quiet) toast.error('Error fetching expenses orders');
       },
     );
   };
@@ -324,16 +286,18 @@ const Expenses = () => {
     fetchExpensesOrders();
   }, []);
 
+  useQueuedRefresh(expensesOrders, () => fetchExpensesOrders(true));
+
   useEffect(() => {
     const filtered = expensesOrders.filter((item) => {
-      const matchesSearch = item.name
+      const matchesSearch = (item.name || '')
         .toLowerCase()
         .includes(search.toLowerCase());
       const matchesDate =
         !(selectedDateRange?.from && selectedDateRange?.to) ||
-        (dayjs(item?.date).valueOf() >=
+        (expenseDate(item?.date).valueOf() >=
           dayjs(selectedDateRange.from).startOf('day').valueOf() &&
-          dayjs(item?.date).valueOf() <=
+          expenseDate(item?.date).valueOf() <=
             dayjs(selectedDateRange.to).endOf('day').valueOf());
 
       return matchesSearch && matchesDate;
@@ -343,71 +307,27 @@ const Expenses = () => {
   }, [search, selectedDateRange, expensesOrders]);
 
   const onConfirmCancel = () => {
-    const onDBSuccess = () => {
-      setRemoveLoading(false);
-      setSelected('');
-      setOpenDialog(false);
-      fetchExpensesOrders();
-      toast.success('Expense cancelled successfully');
-    };
+    if (!selected) return;
 
-    const onDBError = (error: { message?: string; error?: string }) => {
-      setRemoveLoading(false);
-      setSelected('');
-      setOpenDialog(false);
-      toast.error(error?.message || 'Something went wrong. Please try again.');
-    };
-
-    const onSuccess = (response: {
-      status: string;
-      error?: string;
-      data?: {
-        id: string;
-        name: string;
-        description?: string;
-        amount?: number;
-        createdAt?: string;
-        odooStatus?: string;
-        status?: string;
-      };
-    }) => {
-      if (response.status === 'success') {
-        callApi(
-          'PATCH',
-          '/expense/status',
-          {
-            id: selected,
-            status: 'cancelled',
-            company_id: user.company.id,
-          },
-          onDBSuccess,
-          onDBError,
-        );
-      } else {
-        setRemoveLoading(false);
-        toast.error(
-          response?.error || 'Something went wrong. Please try again.',
-        );
-      }
-    };
-    const onError = (error: { message?: string; error?: string }) => {
-      setRemoveLoading(false);
-      setSelected('');
-      setOpenDialog(false);
-      toast.error(error?.message || 'Something went wrong. Please try again.');
-    };
     setRemoveLoading(true);
-
-    const data = {
-      expense_id: selected,
-      company_id: user.company.id,
-    };
-    callServerAPI('POST', `/delete/expenses`, { data }, onSuccess, onError);
-  };
-
-  const cancelOrder = (id: string) => {
-    setSelected(id);
-    setOpenDialog(true);
+    callApi(
+      'POST',
+      `${RESOURCE}/${selected._id}/cancel`,
+      {},
+      () => {
+        setRemoveLoading(false);
+        setSelected(null);
+        fetchExpensesOrders(true);
+        toast.success('Expense cancelled');
+      },
+      (error) => {
+        setRemoveLoading(false);
+        setSelected(null);
+        toast.error(
+          errorMessage(error, 'Something went wrong. Please try again.'),
+        );
+      },
+    );
   };
 
   const handleViewImages = (urls: string[]) => {
@@ -415,197 +335,168 @@ const Expenses = () => {
     setCurrentImageIndex(0);
   };
 
+  const rowProps = {
+    cancelOrder: setSelected,
+    onEdit: (item: ExpenseItem) =>
+      navigate('/expenses/add', { state: { record: item } }),
+    onChanged: () => fetchExpensesOrders(true),
+    onViewImages: handleViewImages,
+  };
+
   return (
-    <div className="min-h-screen  p-4">
-      <div className="container mx-auto max-w-7xl">
-        <Card className="shadow-lg border-0">
-          <CardHeader className="bg-white border-b">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <CardTitle className="text-2xl font-bold">Expenses</CardTitle>
-              <Button onClick={() => navigate('/expenses/add')}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Expense
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6">
-            {/* Search Bar */}
-            <div className="mb-6 flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search expenses by name..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <DateFilter
-                selectedRange={selectedDateRange}
-                onSelect={setSelectedDateRange}
-              />
-            </div>
+    <Container size="xl" px={0}>
+      <PageHeader
+        title="Expenses"
+        actions={
+          <Button
+            leftSection={<Plus size={16} />}
+            onClick={() => navigate('/expenses/add')}
+          >
+            Add Expense
+          </Button>
+        }
+      />
 
-            {loading ? (
-              <div className="w-full overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold">ID</TableHead>
-                      <TableHead className="font-semibold">Name</TableHead>
-                      <TableHead className="font-semibold">Amount</TableHead>
-                      <TableHead className="font-semibold">Date</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
-                      <TableHead className="font-semibold">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableSkeleton rows={20} columns={6} />
-                  </TableBody>
-                </Table>
-              </div>
-            ) : filteredData.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
-                  {search
-                    ? 'No expenses found matching your search.'
-                    : 'No expenses found.'}
-                </p>
-                <p className="text-gray-400 text-sm mt-2">
-                  {!search && 'Create your first expense to get started.'}
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Desktop Table View */}
-                <div className="hidden md:block overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="font-semibold">ID</TableHead>
-                        <TableHead className="font-semibold">Name</TableHead>
-                        <TableHead className="font-semibold">Amount</TableHead>
-                        <TableHead className="font-semibold">Date</TableHead>
-                        <TableHead className="font-semibold">Status</TableHead>
-                        <TableHead className="font-semibold">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredData.map((item) => (
-                        <ExpenseRow
-                          key={item.id}
-                          item={item}
-                          cancelOrder={cancelOrder}
-                          onViewImages={handleViewImages}
-                        />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+      <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'lg' }}>
+        <Group gap="sm" mb="lg" wrap="nowrap">
+          <TextInput
+            flex={1}
+            placeholder="Search expenses by name..."
+            leftSection={<Search size={16} />}
+            value={search}
+            onChange={(e) => setSearch(e.currentTarget.value)}
+          />
+          <DateFilter
+            selectedRange={selectedDateRange}
+            onSelect={setSelectedDateRange}
+          />
+        </Group>
 
-                {/* Mobile Card View */}
-                <div className="md:hidden space-y-4">
+        {loading ? (
+          <Table.ScrollContainer minWidth={720}>
+            <Table>
+              <ExpenseTableHead />
+              <Table.Tbody>
+                {Array.from({ length: 20 }).map((_, row) => (
+                  <Table.Tr key={row}>
+                    {COLUMNS.map((column) => (
+                      <Table.Td key={column}>
+                        <Skeleton height={16} radius="sm" />
+                      </Table.Td>
+                    ))}
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        ) : filteredData.length === 0 ? (
+          <EmptyState
+            icon={<FileText size={32} />}
+            title={
+              search
+                ? 'No expenses found matching your search.'
+                : 'No expenses found.'
+            }
+            description={!search && 'Create your first expense to get started.'}
+          />
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <Table.ScrollContainer minWidth={720} visibleFrom="md">
+              <Table>
+                <ExpenseTableHead />
+                <Table.Tbody>
                   {filteredData.map((item) => (
-                    <ExpenseCard
-                      key={item.id}
-                      item={item}
-                      cancelOrder={cancelOrder}
-                      onViewImages={handleViewImages}
-                    />
+                    <ExpenseRow key={item._id} item={item} {...rowProps} />
                   ))}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+
+            {/* Mobile Card View */}
+            <Stack gap="md" hiddenFrom="md">
+              {filteredData.map((item) => (
+                <ExpenseCard key={item._id} item={item} {...rowProps} />
+              ))}
+            </Stack>
+          </>
+        )}
+      </Paper>
 
       {/* Cancel Confirmation Dialog */}
-      <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Cancellation</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to cancel expense #{selected}? This action
-              cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setOpenDialog(false)}
-              disabled={removeLoading}
-            >
-              No, Keep It
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={onConfirmCancel}
-              disabled={removeLoading}
-            >
-              {removeLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Cancelling...
-                </>
-              ) : (
-                'Yes, Cancel'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmModal
+        opened={!!selected}
+        onClose={() => setSelected(null)}
+        onConfirm={onConfirmCancel}
+        title="Confirm Cancellation"
+        confirmLabel="Yes, Cancel"
+        cancelLabel="No, Keep It"
+        loading={removeLoading}
+      >
+        Are you sure you want to cancel expense{' '}
+        {selected ? recordRef(selected) : ''}? This action cannot be undone.
+      </ConfirmModal>
 
       {/* Image Gallery Dialog */}
       {selectedImages.length > 0 && (
-        <Dialog
-          open={selectedImages.length > 0}
-          onOpenChange={() => setSelectedImages([])}
+        <Modal
+          opened={selectedImages.length > 0}
+          onClose={() => setSelectedImages([])}
+          size="xl"
+          padding="xs"
+          centered
         >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-2">
-            <div className="relative">
-              <img
-                src={selectedImages[currentImageIndex]}
-                alt={`Expense image ${currentImageIndex + 1}`}
-                className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
-              />
-              {selectedImages.length > 1 && (
-                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-70 text-white px-4 py-2 rounded-full text-sm">
-                  {currentImageIndex + 1} / {selectedImages.length}
-                </div>
-              )}
-            </div>
+          <Box pos="relative">
+            <Image
+              src={selectedImages[currentImageIndex]}
+              alt={`Expense image ${currentImageIndex + 1}`}
+              fit="contain"
+              mah="80vh"
+              radius="md"
+            />
             {selectedImages.length > 1 && (
-              <div className="flex justify-center gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setCurrentImageIndex((prev) =>
-                      prev > 0 ? prev - 1 : selectedImages.length - 1,
-                    )
-                  }
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setCurrentImageIndex((prev) =>
-                      prev < selectedImages.length - 1 ? prev + 1 : 0,
-                    )
-                  }
-                >
-                  Next
-                </Button>
-              </div>
+              <Badge
+                pos="absolute"
+                bottom={16}
+                left="50%"
+                color="dark"
+                size="lg"
+                radius="xl"
+                style={{ transform: 'translateX(-50%)' }}
+              >
+                {currentImageIndex + 1} / {selectedImages.length}
+              </Badge>
             )}
-          </DialogContent>
-        </Dialog>
+          </Box>
+          {selectedImages.length > 1 && (
+            <Group justify="center" gap="xs" mt="md">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() =>
+                  setCurrentImageIndex((prev) =>
+                    prev > 0 ? prev - 1 : selectedImages.length - 1,
+                  )
+                }
+              >
+                Previous
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() =>
+                  setCurrentImageIndex((prev) =>
+                    prev < selectedImages.length - 1 ? prev + 1 : 0,
+                  )
+                }
+              >
+                Next
+              </Button>
+            </Group>
+          )}
+        </Modal>
       )}
-    </div>
+    </Container>
   );
 };
 

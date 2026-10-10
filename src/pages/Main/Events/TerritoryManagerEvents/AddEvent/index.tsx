@@ -1,53 +1,90 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar } from '@/components/ui/calendar';
-import { CalendarIcon, X } from 'lucide-react';
-import { toast } from 'sonner';
-import dayjs from 'dayjs';
-import { callApi, callServerAPI } from '@/api';
-import { selectUser } from '@/redux/slices/AuthSlice';
-import { Loader2 } from 'lucide-react';
-import Loader from '@/components/Loader';
+  Alert,
+  Button,
+  Container,
+  Group,
+  Paper,
+  Stack,
+  TextInput,
+} from "@mantine/core";
+import { DatePickerInput, TimeInput } from "@mantine/dates";
+import { CalendarIcon } from "lucide-react";
+import dayjs from "dayjs";
+import { callApi } from "@/api";
+import { errorMessage, newRequestId } from "@/api/v2";
+import { parseCustomDate } from "@/utils";
+import { selectUser } from "@/redux/slices/AuthSlice";
+import { toast } from "@/lib/toast";
+import Loader from "@/components/Loader";
+import SelectBox from "@/components/Select";
+import { PageHeader } from "@/components/app";
+
+const RESOURCE = "/v2/events";
+
+// Form fields the server (or Odoo) can blame; anything else goes in the alert.
+const FIELDS = [
+  "name",
+  "territory_id",
+  "event_type_id",
+  "crop_id",
+  "demo_product_id",
+  "cpo_id",
+  "cpo_name",
+  "date_begin",
+  "date_end",
+];
 
 const AddEvent = () => {
-  const [isDatePickerOpen, setDatePickerOpen] = useState('');
-  const [dateBegin, setDateBegin] = useState(new Date());
-  const [dateEnd, setDateEnd] = useState(new Date());
-  const [beginTime, setBeginTime] = useState(dayjs().format('HH:mm'));
-  const [endTime, setEndTime] = useState(dayjs().format('HH:mm'));
+  // A failed event opened from the list to be fixed and sent again.
+  const record = useLocation().state?.record;
+  // Stored as `DD/MM/YYYY HH:mm:00`.
+  const recordBegin = record ? parseCustomDate(record.date_begin) : null;
+  const recordEnd = record ? parseCustomDate(record.date_end) : null;
+
+  const [dateBegin, setDateBegin] = useState(recordBegin || new Date());
+  const [dateEnd, setDateEnd] = useState(recordEnd || new Date());
+  const [beginTime, setBeginTime] = useState(
+    dayjs(recordBegin || undefined).format("HH:mm"),
+  );
+  const [endTime, setEndTime] = useState(
+    dayjs(recordEnd || undefined).format("HH:mm"),
+  );
   const [loading, setLoading] = useState(false);
-  const [territory, setTerritory] = useState('');
+  const [territory, setTerritory] = useState(record?.territory_id ?? "");
   const { territories } = useSelector(selectUser);
   const userRegion = useSelector(selectUser)?.region;
   const [crops, setCrops] = useState([]);
-  const [selectedCrops, setSelectedCrops] = useState([]);
+  const [selectedCrops, setSelectedCrops] = useState(
+    (record?.crops || []).map((item) => ({ label: item.name, value: item.id })),
+  );
   const [products, setProducts] = useState([]);
-  const [selectedProducts, setSelectedProducts] = useState([]);
-  const [eventName, setEventName] = useState('');
-  const [eventTemId, setEventTemId] = useState('');
+  const [selectedProducts, setSelectedProducts] = useState(
+    (record?.demo_products || []).map((item) => ({
+      label: item.name,
+      value: item.id,
+    })),
+  );
+  const [eventName, setEventName] = useState(record?.name || "");
+  const [eventTemId, setEventTemId] = useState(record?.event_type_id ?? "");
   const [eventTemplates, setEventTemplates] = useState([]);
-  const [cpoName, setCpoName] = useState('');
-  const [cpoId, setCpoId] = useState('');
+  const [cpoName, setCpoName] = useState(record?.cpo_name || "");
+  const [cpoId, setCpoId] = useState(record?.copId ?? "");
   const [cpos, setCpos] = useState([]);
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two events.
+  const requestId = useRef(newRequestId());
   const navigate = useNavigate();
-  const user = useSelector(selectUser);
 
   useEffect(() => {
     if (!userRegion) return;
@@ -59,13 +96,13 @@ const AddEvent = () => {
       };
       const onError = () => {
         setLoading(false);
-        toast.error('Failed to fetch crops', {
-          description: 'Error',
+        toast.error("Failed to fetch crops", {
+          description: "Error",
         });
       };
 
       setLoading(true);
-      callApi('GET', `/events/crops`, null, onSuccess, onError);
+      callApi("GET", `/events/crops`, null, onSuccess, onError);
     };
 
     fetchCrops();
@@ -79,13 +116,13 @@ const AddEvent = () => {
       };
       const onError = () => {
         setLoading(false);
-        toast.error('Failed to fetch products', {
-          description: 'Error',
+        toast.error("Failed to fetch products", {
+          description: "Error",
         });
       };
 
       setLoading(true);
-      callApi('GET', `/events/products`, null, onSuccess, onError);
+      callApi("GET", `/events/products`, null, onSuccess, onError);
     };
 
     fetchProducts();
@@ -101,13 +138,13 @@ const AddEvent = () => {
       };
       const onError = () => {
         setLoading(false);
-        toast.error('Failed to fetch event templates', {
-          description: 'Error',
+        toast.error("Failed to fetch event templates", {
+          description: "Error",
         });
       };
 
       setLoading(true);
-      callApi('GET', `/events/templates`, null, onSuccess, onError);
+      callApi("GET", `/events/templates`, null, onSuccess, onError);
     };
 
     const fetchCpos = async () => {
@@ -117,14 +154,14 @@ const AddEvent = () => {
       };
       const onError = () => {
         setLoading(false);
-        toast.error('Failed to fetch CPOs', {
-          description: 'Error',
+        toast.error("Failed to fetch CPOs", {
+          description: "Error",
         });
       };
 
       setLoading(true);
       callApi(
-        'GET',
+        "GET",
         `/events/cpos?territory_id=${territory}`,
         null,
         onSuccess,
@@ -138,99 +175,68 @@ const AddEvent = () => {
 
   const handleAddEvent = () => {
     if (
-      territory === '' ||
-      eventName === '' ||
+      territory === "" ||
+      eventName === "" ||
       selectedCrops.length === 0 ||
       selectedProducts.length === 0 ||
       // cpoName === '' ||
-      eventTemId === ''
+      eventTemId === ""
     ) {
-      toast.error('Please fill all the fields', {
-        description: 'Error',
+      toast.error("Please fill all the fields", {
+        description: "Error",
       });
       return;
     }
 
-    const data = {
+    // The region, organiser and manager are set by the server, which also
+    // queues the category's checklist once the event is in Odoo.
+    const body = {
       name: eventName,
       crop_id: selectedCrops.map((item) => item.value),
       demo_product_id: selectedProducts.map((item) => item.value),
-      date_begin: dayjs(dateBegin).format('DD/MM/YYYY HH:mm:00'),
-      date_end: dayjs(dateEnd).format('DD/MM/YYYY HH:mm:00'),
-      region_id: userRegion.id,
+      date_begin: `${dayjs(dateBegin).format("YYYY-MM-DD")} ${beginTime || "00:00"}`,
+      date_end: `${dayjs(dateEnd).format("YYYY-MM-DD")} ${endTime || "00:00"}`,
       territory_id: territory,
-      organizer_id: user.id,
-      cpo_name: cpoName,
-      rsm_id: user.manager.id,
       event_type_id: eventTemId,
-      company_id: user.company_id,
-      cpo_name_id: cpoId,
-      copId: cpoId || null,
+      cpo_name: cpoName,
+      ...(cpoId && { cpo_id: cpoId }),
     };
 
-    const onCreatedSuccess = () => {
+    const onSuccess = () => {
       setLoading(false);
-      toast.success('Event added successfully', {
-        description: 'Success',
-      });
-      navigate('/events');
-    };
-
-    const onCreatedError = () => {
-      setLoading(false);
-      toast.error('Failed to add event', {
-        description: 'Error',
-      });
-    };
-
-    const onSuccess = (response) => {
-      const mergedData = {
-        ...data,
-        id: response.data.id,
-        event_stage_id: response.data.stage_id,
-      };
-
-      const checkListData = {
-        event_id: response.data.id,
-        checkist_vals: eventTemplates
-          ?.find((item) => item.id === eventTemId)
-          ?.check_list_ids.map((item) => ({
-            check_list_id: item.id,
-          })),
-      };
-
-      callServerAPI(
-        'POST',
-        '/post/checklist',
-        { data: checkListData },
-        () => {
-          callApi(
-            'POST',
-            '/events/create',
-            mergedData,
-            onCreatedSuccess,
-            onCreatedError,
-          );
-        },
-        () => {
-          setLoading(false);
-          toast.error('Failed to add event checklist', {
-            description: 'Error',
-          });
-        },
+      toast.success(
+        record ? "Event updated and queued" : "Event saved and queued",
+        { description: "Success" },
       );
+      navigate("/events");
     };
 
     const onError = (error) => {
       setLoading(false);
-      toast.error(error.message || 'Failed to add event', {
-        description: 'Error',
+      const message = errorMessage(error, "Failed to add event");
+      setFieldError({ field: error?.field, message });
+      toast.error(message, {
+        description: "Error",
       });
     };
 
     setLoading(true);
-    callServerAPI('POST', '/post/event', { data }, onSuccess, onError);
+    setFieldError(null);
+    if (record) {
+      callApi("PUT", `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
+      callApi(
+        "POST",
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
+      );
+    }
   };
+
+  const errorFor = (...fields: string[]) =>
+    fields.includes(fieldError?.field) ? fieldError.message : undefined;
 
   const territoriesData =
     territories.map((item) => ({
@@ -263,268 +269,124 @@ const AddEvent = () => {
       value: item.id,
     })) || [];
 
+  // Same rule as before: any day whose midnight is already past is disabled.
+  const isPastDay = (date: string) => dayjs(date).toDate() < new Date();
+
   return (
-    <div className="w-full">
-      <Loader loading={loading} />
-      <Card
-        className={
-          loading
-            ? 'opacity-50 pointer-events-none w-full md:w-1/2 mxto-auto'
-            : 'w-full md:w-1/2 mx-auto'
-        }
-      >
-        <CardHeader>
-          <CardTitle>Add Event</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 ">
-          <div className="w-full">
-            <Label htmlFor="eventName">Event Address</Label>
-            <Input
-              id="eventName"
-              value={eventName}
-              onChange={(e) => setEventName(e.target.value)}
-              placeholder="Enter the event address"
-              required
+    <Container size="sm" px={0}>
+      <PageHeader title={record ? "Edit Event" : "Add Event"} back />
+      <Paper withBorder shadow="sm" p="lg" pos="relative">
+        <Loader loading={loading} />
+        <Stack gap="md">
+          {fieldError && !FIELDS.includes(fieldError.field) && (
+            <Alert color="red" variant="light">
+              {fieldError.message}
+            </Alert>
+          )}
+          <TextInput
+            label="Event Address"
+            value={eventName}
+            onChange={(e) => setEventName(e.currentTarget.value)}
+            placeholder="Enter the event address"
+            error={errorFor("name")}
+            required
+          />
+          <TextInput
+            label="Region"
+            value={userRegion?.name || "N/A"}
+            disabled
+            placeholder="Region"
+          />
+          <SelectBox
+            label="Territory"
+            placeholder="Select the territory"
+            data={territoriesData}
+            selectedValue={territory}
+            onValueChange={setTerritory}
+            error={errorFor("territory_id")}
+          />
+          <SelectBox
+            label="Event Category"
+            placeholder="Select the event category"
+            data={eventTemplatesData}
+            selectedValue={eventTemId}
+            onValueChange={setEventTemId}
+            error={errorFor("event_type_id")}
+          />
+          <SelectBox
+            label="Crop"
+            placeholder="Select the crop"
+            data={cropsData}
+            selectedValue={selectedCrops}
+            onValueChange={setSelectedCrops}
+            error={errorFor("crop_id")}
+            isMultiple
+          />
+          <SelectBox
+            label="Product"
+            placeholder="Select the product"
+            data={productsData}
+            selectedValue={selectedProducts}
+            onValueChange={setSelectedProducts}
+            error={errorFor("demo_product_id")}
+            isMultiple
+          />
+          <SelectBox
+            label="CPO for Allowance"
+            placeholder="Select the CPO"
+            data={cposData}
+            selectedValue={cpoId}
+            onValueChange={(value) => {
+              const cpo = cposData.find((item) => item.value === value);
+              setCpoName(cpo?.label || "");
+              setCpoId(cpo?.value || "");
+            }}
+            error={errorFor("cpo_id", "cpo_name")}
+          />
+          <Group gap="sm" align="flex-end" wrap="nowrap">
+            <DatePickerInput
+              flex={1}
+              label="Date Begin"
+              placeholder="Select a Date"
+              valueFormat="DD-MM-YYYY"
+              leftSection={<CalendarIcon size={16} />}
+              value={dateBegin}
+              onChange={(value) => value && setDateBegin(dayjs(value).toDate())}
+              excludeDate={isPastDay}
+              error={errorFor("date_begin")}
             />
-          </div>
-          <div className="w-full">
-            <Label htmlFor="region">Region</Label>
-            <Input
-              id="region"
-              value={userRegion?.name || 'N/A'}
-              disabled
-              placeholder="Region"
+            <TimeInput
+              w={130}
+              aria-label="Begin time"
+              value={beginTime}
+              onChange={(e) => setBeginTime(e.currentTarget.value)}
             />
-          </div>
-          <div className="w-full">
-            <Label htmlFor="territory">Territory</Label>
-            <Select value={territory} onValueChange={setTerritory}>
-              <SelectTrigger id="territory" className="w-full">
-                <SelectValue placeholder="Select the territory" />
-              </SelectTrigger>
-              <SelectContent>
-                {territoriesData.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="eventTemId">Event Category</Label>
-            <Select value={eventTemId} onValueChange={setEventTemId}>
-              <SelectTrigger id="eventTemId" className="w-full">
-                <SelectValue placeholder="Select the event category" />
-              </SelectTrigger>
-              <SelectContent>
-                {eventTemplatesData.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="crops">Crop</Label>
-            <Select
-              onValueChange={(value) => {
-                if (!selectedCrops.find((item) => item.value === value)) {
-                  const crop = cropsData.find((item) => item.value === value);
-                  setSelectedCrops([...selectedCrops, crop]);
-                }
-              }}
-            >
-              <SelectTrigger id="crops" className="w-full">
-                <SelectValue placeholder="Select the crop" />
-              </SelectTrigger>
-              <SelectContent>
-                {cropsData.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {selectedCrops.map((item) => (
-                <div
-                  key={item.value}
-                  className="flex items-center  px-2 py-1 rounded"
-                >
-                  <span className="text-sm">{item.label}</span>
-                  <X
-                    className="h-4 w-4 ml-1 cursor-pointer"
-                    onClick={() =>
-                      setSelectedCrops(
-                        selectedCrops.filter(
-                          (crop) => crop.value !== item.value,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="products">Product</Label>
-            <Select
-              onValueChange={(value) => {
-                if (!selectedProducts.find((item) => item.value === value)) {
-                  const product = productsData.find(
-                    (item) => item.value === value,
-                  );
-                  setSelectedProducts([...selectedProducts, product]);
-                }
-              }}
-            >
-              <SelectTrigger id="products" className="w-full">
-                <SelectValue placeholder="Select the product" />
-              </SelectTrigger>
-              <SelectContent>
-                {productsData.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {selectedProducts.map((item) => (
-                <div
-                  key={item.value}
-                  className="flex items-center px-2 py-1 rounded"
-                >
-                  <span className="text-sm">{item.label}</span>
-                  <X
-                    className="h-4 w-4 ml-1 cursor-pointer"
-                    onClick={() =>
-                      setSelectedProducts(
-                        selectedProducts.filter(
-                          (product) => product.value !== item.value,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="cpoId">CPO for Allowance</Label>
-            <Select
-              value={cpoId}
-              onValueChange={(value) => {
-                const cpo = cposData.find((item) => item.value === value);
-                setCpoName(cpo?.label || '');
-                setCpoId(cpo?.value || '');
-              }}
-            >
-              <SelectTrigger className="w-full mt-1">
-                <SelectValue placeholder="Select the CPO" />
-              </SelectTrigger>
-              <SelectContent>
-                {cposData.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="dateBegin">Date Begin</Label>
-            <Popover
-              open={isDatePickerOpen === 'dateBegin'}
-              onOpenChange={(open) =>
-                setDatePickerOpen(open ? 'dateBegin' : '')
-              }
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal"
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dateBegin
-                    ? dayjs(dateBegin).format('DD-MM-YYYY')
-                    : 'Select a Date'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={dateBegin}
-                  onSelect={(selectedDate) => {
-                    setDateBegin(selectedDate);
-                    setDatePickerOpen('');
-                  }}
-                  disabled={(d) => d < new Date()}
-                  initialFocus
-                />
-                <div className="p-3 border-t">
-                  <Input
-                    type="time"
-                    value={beginTime}
-                    onChange={(e) => setBeginTime(e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <div>
-            <Label htmlFor="dateEnd">Date End</Label>
-            <Popover
-              open={isDatePickerOpen === 'dateEnd'}
-              onOpenChange={(open) => setDatePickerOpen(open ? 'dateEnd' : '')}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal"
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dateEnd
-                    ? dayjs(dateEnd).format('DD-MM-YYYY')
-                    : 'Select a Date'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={dateEnd}
-                  onSelect={(selectedDate) => {
-                    setDateEnd(selectedDate);
-                    setDatePickerOpen('');
-                  }}
-                  disabled={(d) => d < new Date()}
-                  initialFocus
-                />
-                <div className="p-3 border-t">
-                  <Input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <Button
-            onClick={handleAddEvent}
-            disabled={loading}
-            className="w-full col-span-2 "
-          >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Submit
+          </Group>
+          <Group gap="sm" align="flex-end" wrap="nowrap">
+            <DatePickerInput
+              flex={1}
+              label="Date End"
+              placeholder="Select a Date"
+              valueFormat="DD-MM-YYYY"
+              leftSection={<CalendarIcon size={16} />}
+              value={dateEnd}
+              onChange={(value) => value && setDateEnd(dayjs(value).toDate())}
+              excludeDate={isPastDay}
+              error={errorFor("date_end")}
+            />
+            <TimeInput
+              w={130}
+              aria-label="End time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.currentTarget.value)}
+            />
+          </Group>
+          <Button onClick={handleAddEvent} loading={loading} fullWidth>
+            {record ? "Save & Resend" : "Submit"}
           </Button>
-        </CardContent>
-      </Card>
-    </div>
+        </Stack>
+      </Paper>
+    </Container>
   );
 };
 

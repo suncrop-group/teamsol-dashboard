@@ -1,44 +1,67 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar } from '@/components/ui/calendar';
+  Alert,
+  Button,
+  Container,
+  NumberInput,
+  Paper,
+  Stack,
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
 import { CalendarIcon } from 'lucide-react';
-import { toast } from 'sonner';
 import dayjs from 'dayjs';
-import { callApi, callServerAPI } from '@/api';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
 import { selectUser } from '@/redux/slices/AuthSlice';
-import { Loader2 } from 'lucide-react';
+import { toast } from '@/lib/toast';
+import { PageHeader } from '@/components/app';
+import SelectBox from '@/components/Select';
+import Loader from '@/components/Loader';
+
+const RESOURCE = '/v2/credit-limit/temporary';
+
+// A stored date is 'DD-MM-YYYY' text; anything else falls back to today.
+const fromStoredDate = (value?: string) => {
+  const [day, month, year] = String(value || '').split('-').map(Number);
+  return day && month && year ? new Date(year, month - 1, day) : new Date();
+};
 
 const AddTemporaryCredit = () => {
-  const [policy, setPolicy] = useState('');
-  const [amount, setAmount] = useState('');
-  const [isDatePickerOpen, setDatePickerOpen] = useState('');
-  const [date, setDate] = useState(new Date());
-  const [validUpto, setValidUpto] = useState(new Date());
-  const [promiseDate, setPromiseDate] = useState(new Date());
+  // A failed request opened from the list to be fixed and sent again.
+  const record = useLocation().state?.record;
+  const [policy, setPolicy] = useState(record?.policy_id ?? '');
+  const [amount, setAmount] = useState<number | string>(
+    record?.allowed_limit ?? '',
+  );
+  const [date, setDate] = useState(fromStoredDate(record?.date));
+  const [validUpto, setValidUpto] = useState(
+    fromStoredDate(record?.valid_up_date),
+  );
+  const [promiseDate, setPromiseDate] = useState(
+    fromStoredDate(record?.promise_date),
+  );
   const [policies, setPolicies] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [territory, setTerritory] = useState('');
-  const [customer, setCustomer] = useState('');
-  const { territories, company, user } = useSelector(selectUser);
+  const [territory, setTerritory] = useState(
+    record?.customer?.territory_id ?? '',
+  );
+  const [customer, setCustomer] = useState(record?.partner_id ?? '');
+  const { territories } = useSelector(selectUser);
   const [customers, setCustomers] = useState([]);
   const navigate = useNavigate();
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two requests.
+  const requestId = useRef(newRequestId());
 
   useEffect(() => {
     const fetchAddTemporaryCreditCategory = async () => {
@@ -111,65 +134,43 @@ const AddTemporaryCredit = () => {
       return;
     }
 
-    const data = {
+    const body = {
       partner_id: Number(customer),
       policy_id: Number(policy),
-      company_id: Number(company.id),
-      date: dayjs(date).format('DD-MM-YYYY'),
-      requested_by_id: Number(user.employee_id),
       allowed_limit: Number(amount),
-      valid_up_date: dayjs(validUpto).format('DD-MM-YYYY'),
-      promise_date: dayjs(promiseDate).format('DD-MM-YYYY'),
+      date: dayjs(date).format('YYYY-MM-DD'),
+      valid_up_date: dayjs(validUpto).format('YYYY-MM-DD'),
+      promise_date: dayjs(promiseDate).format('YYYY-MM-DD'),
     };
 
-    const onCreatedSuccess = () => {
+    const onSuccess = () => {
       setLoading(false);
-      toast.success('Temporary credit added successfully', {
-        description: 'Success',
-      });
+      toast.success(
+        record ? 'Temporary credit updated and queued' : 'Temporary credit saved and queued',
+      );
       navigate('/temporary-credit');
     };
 
-    const onCreatedError = () => {
+    const onError = (error) => {
       setLoading(false);
-      toast.error('Failed to add temporary credit', {
-        description: 'Error',
-      });
-    };
-
-    const onSuccess = (response) => {
-      const mergedData = {
-        ...data,
-        id: response.data.expense.id,
-        name: response.data.expense.name,
-        odooStatus: response.data.expense.state,
-        sequence: response.data.expense.sequence,
-      };
-
-      callApi(
-        'POST',
-        '/credit-limit/temporary',
-        mergedData,
-        onCreatedSuccess,
-        onCreatedError
-      );
-    };
-
-    const onError = () => {
-      setLoading(false);
-      toast.error('Failed to add temporary credit', {
-        description: 'Error',
-      });
+      const message = errorMessage(error, 'Failed to add temporary credit');
+      setFieldError({ field: error?.field, message });
+      toast.error(message);
     };
 
     setLoading(true);
-    callServerAPI(
-      'POST',
-      '/post/temporary/credit',
-      { data },
-      onSuccess,
-      onError
-    );
+    setFieldError(null);
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
+      callApi(
+        'POST',
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
+      );
+    }
   };
 
   const territoriesData =
@@ -193,191 +194,102 @@ const AddTemporaryCredit = () => {
         }))
       : [];
 
+  const errorFor = (field: string) =>
+    fieldError?.field === field ? fieldError.message : undefined;
+
+  // Only dates after today can be picked.
+  const tomorrow = dayjs().add(1, 'day').startOf('day').toDate();
+
   return (
-    <div className="container mx-auto p-4 max-w-md">
-      {loading && (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
-      )}
-      <Card className={loading ? 'opacity-50 pointer-events-none' : ''}>
-        <CardHeader>
-          <CardTitle>Add Temporary Credit</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="date">Date</Label>
-              <Popover
-                open={isDatePickerOpen === 'date'}
-                onOpenChange={(open) => setDatePickerOpen(open ? 'date' : '')}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? dayjs(date).format('DD-MM-YYYY') : 'Select a Date'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={(selectedDate) => {
-                      setDate(selectedDate);
-                      setDatePickerOpen('');
-                    }}
-                    disabled={(d) => d < new Date()}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div>
-              <Label htmlFor="territory">Territory</Label>
-              <Select value={territory} onValueChange={setTerritory}>
-                <SelectTrigger id="territory" className="w-full">
-                  <SelectValue placeholder="Select the territory" />
-                </SelectTrigger>
-                <SelectContent>
-                  {territoriesData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="customer">Customer</Label>
-              <Select
-                value={customer}
-                onValueChange={setCustomer}
-                disabled={!territory}
-              >
-                <SelectTrigger id="customer" className="w-full">
-                  <SelectValue placeholder="Select the customer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customersData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="policy">Policy</Label>
-              <Select
-                value={policy}
-                onValueChange={setPolicy}
-                disabled={!territory || !customer}
-              >
-                <SelectTrigger id="policy" className="w-full">
-                  <SelectValue placeholder="Select the policy" />
-                </SelectTrigger>
-                <SelectContent>
-                  {policiesData.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="amount">Credit Amount</Label>
-              <Input
-                id="amount"
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="Enter the credit amount"
-              />
-            </div>
-            <div>
-              <Label htmlFor="validUpto">Valid Up To</Label>
-              <Popover
-                open={isDatePickerOpen === 'validUpto'}
-                onOpenChange={(open) =>
-                  setDatePickerOpen(open ? 'validUpto' : '')
-                }
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {validUpto
-                      ? dayjs(validUpto).format('DD-MM-YYYY')
-                      : 'Select a Date'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={validUpto}
-                    onSelect={(selectedDate) => {
-                      setValidUpto(selectedDate);
-                      setDatePickerOpen('');
-                    }}
-                    disabled={(d) => d < new Date()}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div>
-              <Label htmlFor="promiseDate">Promise Date</Label>
-              <Popover
-                open={isDatePickerOpen === 'promiseDate'}
-                onOpenChange={(open) =>
-                  setDatePickerOpen(open ? 'promiseDate' : '')
-                }
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {promiseDate
-                      ? dayjs(promiseDate).format('DD-MM-YYYY')
-                      : 'Select a Date'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={promiseDate}
-                    onSelect={(selectedDate) => {
-                      setPromiseDate(selectedDate);
-                      setDatePickerOpen('');
-                    }}
-                    disabled={(d) => d < new Date()}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <Button
-              onClick={handleAddExpense}
-              disabled={loading}
-              className="w-full"
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : null}
-              Submit
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <Container size="xs" px={0}>
+      <PageHeader
+        title={record ? 'Edit Temporary Credit' : 'Add Temporary Credit'}
+        back
+      />
+      <Paper withBorder shadow="sm" p="lg" pos="relative">
+        <Loader loading={loading} />
+        <Stack gap="md">
+          {fieldError && ![
+            'date',
+            'partner_id',
+            'policy_id',
+            'allowed_limit',
+            'valid_up_date',
+            'promise_date',
+          ].includes(fieldError.field) && (
+            <Alert color="red" variant="light">
+              {fieldError.message}
+            </Alert>
+          )}
+          <DatePickerInput
+            label="Date"
+            placeholder="Select a Date"
+            valueFormat="DD-MM-YYYY"
+            leftSection={<CalendarIcon size={16} />}
+            value={date}
+            onChange={(value) => setDate(value ? dayjs(value).toDate() : null)}
+            minDate={tomorrow}
+            error={errorFor('date')}
+          />
+          <SelectBox
+            label="Territory"
+            placeholder="Select the territory"
+            data={territoriesData}
+            selectedValue={territory}
+            onValueChange={setTerritory}
+          />
+          <SelectBox
+            label="Customer"
+            placeholder="Select the customer"
+            data={customersData}
+            selectedValue={customer}
+            onValueChange={setCustomer}
+            disabled={!territory}
+            error={errorFor('partner_id')}
+          />
+          <SelectBox
+            label="Policy"
+            placeholder="Select the policy"
+            data={policiesData}
+            selectedValue={policy}
+            onValueChange={setPolicy}
+            disabled={!territory || !customer}
+            error={errorFor('policy_id')}
+          />
+          <NumberInput
+            label="Credit Amount"
+            placeholder="Enter the credit amount"
+            value={amount}
+            onChange={setAmount}
+            hideControls
+            error={errorFor('allowed_limit')}
+          />
+          <DatePickerInput
+            label="Valid Up To"
+            placeholder="Select a Date"
+            valueFormat="DD-MM-YYYY"
+            leftSection={<CalendarIcon size={16} />}
+            value={validUpto}
+            onChange={(value) => setValidUpto(value ? dayjs(value).toDate() : null)}
+            minDate={tomorrow}
+            error={errorFor('valid_up_date')}
+          />
+          <DatePickerInput
+            label="Promise Date"
+            placeholder="Select a Date"
+            valueFormat="DD-MM-YYYY"
+            leftSection={<CalendarIcon size={16} />}
+            value={promiseDate}
+            onChange={(value) => setPromiseDate(value ? dayjs(value).toDate() : null)}
+            minDate={tomorrow}
+            error={errorFor('promise_date')}
+          />
+          <Button onClick={handleAddExpense} loading={loading} fullWidth>
+            {record ? 'Save & Resend' : 'Submit'}
+          </Button>
+        </Stack>
+      </Paper>
+    </Container>
   );
 };
 

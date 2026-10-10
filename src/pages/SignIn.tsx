@@ -2,14 +2,22 @@ import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { setAuthenticated, setUser } from '@/redux/slices/AuthSlice';
 import { selectProjectDetails } from '@/redux/slices/ProjectSlice';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { toast } from 'sonner'; // or shadcn/ui's toast if preferred
+import {
+  Button,
+  Center,
+  Image,
+  Paper,
+  PasswordInput,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core';
+import { toast } from '@/lib/toast';
 import { callApi } from '@/api';
 import { validateInput } from '@/utils';
-import logo from '@/assets/images/logo.png'; // Update with your logo path
+import logo from '@/assets/images/logo.png';
 import { useNavigate } from 'react-router-dom';
-// import { useNavigate } from 'react-router-dom'; // For routing
 
 const SignIn = () => {
   const [email, setEmail] = useState('');
@@ -22,10 +30,10 @@ const SignIn = () => {
   const navigate = useNavigate();
 
   const handleSignIn = async () => {
-    if (email === '')
-      setErrors((prev) => ({ ...prev, email: 'Email is required' }));
-    if (password === '')
-      setErrors((prev) => ({ ...prev, password: 'Password is required' }));
+    setErrors({
+      email: email === '' ? 'Email is required' : '',
+      password: password === '' ? 'Password is required' : '',
+    });
     if (!validateInput({ email, password })) return;
 
     setLoading(true);
@@ -51,75 +59,52 @@ const SignIn = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center ">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-        <div className="flex flex-col items-center mb-8">
-          <img
-            src={logo}
-            alt="Logo"
-            className="w-24 h-24 object-contain mb-4"
-          />
-          <span className="uppercase text-muted-foreground font-medium">
+    <Center mih="100vh" p="md">
+      <Paper shadow="xl" p="xl" radius="xl" w="100%" maw={440} withBorder>
+        <Stack align="center" gap={4} mb="xl">
+          <Image src={logo} alt="Logo" w={96} h={96} fit="contain" mb="sm" />
+          <Text tt="uppercase" c="dimmed" fw={500} size="sm">
             Employee
-          </span>
-          <h2 className="text-2xl font-bold mt-2 mb-1">
+          </Text>
+          <Title order={2} ta="center">
             {projectDetails?.title || 'Access Your Employer Portal'}
-          </h2>
-          <p className="text-gray-500 mb-2 text-center text-sm">
+          </Title>
+          <Text c="dimmed" size="sm" ta="center">
             {projectDetails?.description ||
               'Sign in to manage projects and collaborate seamlessly.'}
-          </p>
-        </div>
+          </Text>
+        </Stack>
         <form
-          className="flex flex-col gap-5"
           onSubmit={(e) => {
             e.preventDefault();
             handleSignIn();
           }}
         >
-          <div>
-            <Input
+          <Stack gap="md">
+            <TextInput
+              label="Email"
               placeholder="Enter your email"
               type="email"
+              size="md"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={errors.email ? 'border-red-500' : ''}
-              required
+              onChange={(e) => setEmail(e.currentTarget.value)}
+              error={errors.email || undefined}
             />
-            {errors.email && (
-              <p className="text-red-500 text-xs mt-1">{errors.email}</p>
-            )}
-          </div>
-          <div>
-            <Input
+            <PasswordInput
+              label="Password"
               placeholder="Enter your password"
-              type="password"
+              size="md"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className={errors.password ? 'border-red-500' : ''}
-              required
+              onChange={(e) => setPassword(e.currentTarget.value)}
+              error={errors.password || undefined}
             />
-            {errors.password && (
-              <p className="text-red-500 text-xs mt-1">{errors.password}</p>
-            )}
-          </div>
-          {/* <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="link"
-              className="text-xs px-0"
-              onClick={() => navigate('/forgot-password')}
-              disabled
-            >
-              Forgot Password?
+            <Button type="submit" fullWidth size="md" loading={loading}>
+              Sign In
             </Button>
-          </div> */}
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Signing In...' : 'Sign In'}
-          </Button>
+          </Stack>
         </form>
-      </div>
-    </div>
+      </Paper>
+    </Center>
   );
 };
 

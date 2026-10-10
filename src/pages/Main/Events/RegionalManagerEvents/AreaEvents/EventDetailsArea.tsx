@@ -1,48 +1,152 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { Eye, MoreVertical, X } from 'lucide-react';
-import { toast } from 'sonner';
+  ActionIcon,
+  Alert,
+  AspectRatio,
+  Badge,
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Container,
+  Grid,
+  Group,
+  Image,
+  Loader,
+  Menu,
+  Modal,
+  Paper,
+  SimpleGrid,
+  Stack,
+  Text,
+  Title,
+  useMantineTheme,
+} from '@mantine/core';
+import { Eye, MoreVertical } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import dayjs from 'dayjs';
-import { callApi, callServerAPI } from '@/api';
-import { priceFormatter } from '@/utils';
-import { selectUser } from '@/redux/slices/AuthSlice';
-import { Loader2 } from 'lucide-react';
+import { callApi } from '@/api';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  errorMessage,
+  isQueued,
+  isUnsynced,
+  recordRef,
+  useQueuedRefresh,
+} from '@/api/v2';
+import { priceFormatter } from '@/utils';
+import { ConfirmModal, PageHeader, StatusBadge } from '@/components/app';
 
-const statusStyles = {
-  sent: 'bg-green-100 text-green-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  canceled: 'bg-red-100 text-red-800',
-  quotation: 'bg-blue-100 text-blue-800',
-  approved: 'bg-green-100 text-green-800',
-  draft: 'bg-red-100 text-red-800',
-  confirmed: 'bg-green-100 text-green-800',
-  approval: 'bg-yellow-100 text-yellow-800',
-  approve: 'bg-green-100 text-green-800',
-  submit: 'bg-green-100 text-green-800',
-  'to report': 'bg-yellow-100 text-yellow-800',
-  submitted: 'bg-blue-100 text-blue-800',
-  done: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  refuse: 'bg-red-100 text-red-800',
-  refused: 'bg-red-100 text-red-800',
-  cancelled: 'bg-red-100 text-red-800',
+const ImagePreviewModal = ({
+  src,
+  alt,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  onClose: () => void;
+}) => (
+  <Modal opened onClose={onClose} size="xl" padding="xs">
+    <Image src={src} alt={alt} mah="85vh" fit="contain" radius="md" />
+  </Modal>
+);
+
+const Field = ({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) => (
+  <Box>
+    <Text size="sm" c="dimmed">
+      {label}
+    </Text>
+    <Text fw={500} mt={4} component="div">
+      {children}
+    </Text>
+  </Box>
+);
+
+// Changes to a synced event or its attendees that Odoo refused. The event
+// went back to how it was; each change can be sent again or dismissed.
+const RefusedChanges = ({
+  eventId,
+  actions,
+  onChanged,
+}: {
+  eventId: string;
+  actions: { jobId: string; label: string; error: string }[];
+  onChanged: () => void;
+}) => {
+  // `<jobId>:retry` or `<jobId>:dismiss` while that call is in flight.
+  const [busy, setBusy] = useState('');
+
+  if (!actions?.length) return null;
+
+  const run = (jobId: string, kind: 'retry' | 'dismiss') => {
+    setBusy(`${jobId}:${kind}`);
+    callApi(
+      kind === 'retry' ? 'POST' : 'DELETE',
+      kind === 'retry'
+        ? `/v2/events/${eventId}/actions/${jobId}/retry`
+        : `/v2/events/${eventId}/actions/${jobId}`,
+      kind === 'retry' ? {} : null,
+      () => {
+        setBusy('');
+        toast.success(kind === 'retry' ? 'Queued again' : 'Dismissed');
+        onChanged();
+      },
+      (error) => {
+        setBusy('');
+        toast.error(
+          errorMessage(
+            error,
+            kind === 'retry'
+              ? 'Could not send it again. Please try again.'
+              : 'Could not dismiss. Please try again.',
+          ),
+        );
+        // It may already be gone or resent: show what is there now.
+        onChanged();
+      },
+    );
+  };
+
+  return (
+    <Stack gap='xs'>
+      {actions.map((action) => (
+        <Alert key={action.jobId} color='red' variant='light' p='xs'>
+          <Group justify='space-between' align='center' gap='sm'>
+            <Text size='sm' flex={1} miw={200}>
+              Could not send: {action.label} — {action.error}
+            </Text>
+            <Group gap={6} wrap='nowrap'>
+              <Button
+                size='compact-xs'
+                variant='default'
+                onClick={() => run(action.jobId, 'retry')}
+                loading={busy === `${action.jobId}:retry`}
+                disabled={!!busy}
+              >
+                Try again
+              </Button>
+              <Button
+                size='compact-xs'
+                variant='subtle'
+                color='red'
+                onClick={() => run(action.jobId, 'dismiss')}
+                loading={busy === `${action.jobId}:dismiss`}
+                disabled={!!busy}
+              >
+                Dismiss
+              </Button>
+            </Group>
+          </Group>
+        </Alert>
+      ))}
+    </Stack>
+  );
 };
 
 const ExpensesCard = ({
@@ -51,7 +155,10 @@ const ExpensesCard = ({
   setToggleExpenseImages,
 }: {
   item: {
-    id: string;
+    _id: string;
+    // Odoo id; empty until the expense has been sent.
+    id?: number;
+    jobId?: string;
     name: string;
     description?: string;
     amount?: number;
@@ -68,10 +175,10 @@ const ExpensesCard = ({
 
   const toggleImages = () => {
     setToggleExpenseImages((prev) => {
-      if (prev.includes(item.id)) {
-        return prev.filter((id) => id !== item.id);
+      if (prev.includes(item._id)) {
+        return prev.filter((id) => id !== item._id);
       } else {
-        return [...prev, item.id];
+        return [...prev, item._id];
       }
     });
   };
@@ -79,144 +186,126 @@ const ExpensesCard = ({
   return (
     <>
       <Card
-        className={`w-full ${item.odooStatus !== 'draft' ? 'opacity-50' : ''}`}
+        withBorder
+        padding="md"
+        opacity={item.odooStatus !== 'draft' ? 0.5 : 1}
       >
-        <CardContent className="p-4">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-medium flex-1">{item?.name}</span>
-            <span className="text-sm">{priceFormatter(item?.amount)} PKR</span>
-          </div>
-          <div className="flex justify-between items-end">
-            <span className="text-sm text-gray-600">#{item?.id}</span>
-          </div>
-          <div className="flex justify-between items-center mt-2">
-            <div className="flex flex-col gap-2 flex-1">
-              <span className="text-sm text-gray-600">
+        <Stack gap="xs">
+          <Group justify="space-between" wrap="nowrap" align="flex-start">
+            <Text size="sm" fw={500} flex={1}>
+              {item?.name}
+            </Text>
+            <Text size="sm">{priceFormatter(item?.amount)} PKR</Text>
+          </Group>
+          <Text size="sm" c="dimmed">
+            {recordRef(item)}
+          </Text>
+          <Group justify="space-between" wrap="nowrap" align="center">
+            <Stack gap="xs" flex={1}>
+              <Text size="sm" c="dimmed">
                 {dayjs(item?.createdAt).format('MM-DD-YYYY')} -{' '}
                 {dayjs(item?.createdAt).format('hh:mm A')} 🕒
-              </span>
+              </Text>
               {item?.description && (
-                <span className="text-sm text-gray-600 line-clamp-2">
+                <Text size="sm" c="dimmed" lineClamp={2}>
                   {item?.description}
-                </span>
+                </Text>
               )}
-              <div className="flex items-center gap-2">
+              <Group gap="xs">
                 {item?.url && (
-                  <Button
-                    variant="link"
-                    size="sm"
+                  <ActionIcon
+                    variant="subtle"
+                    color="blue"
+                    aria-label="View attachment"
                     onClick={() => window.open(item?.url, '_blank')}
-                    className="p-0 h-auto"
                   >
-                    <Eye className="h-4 w-4 text-blue-600" />
-                  </Button>
+                    <Eye size={16} />
+                  </ActionIcon>
                 )}
                 {item?.urls && item.urls.length > 0 && (
                   <Button
-                    variant="ghost"
-                    size="sm"
+                    variant="subtle"
+                    size="compact-sm"
                     onClick={toggleImages}
-                    className="text-blue-500 hover:text-blue-700 p-0 h-auto"
                   >
-                    {toggleExpenseImages.includes(item.id)
+                    {toggleExpenseImages.includes(item._id)
                       ? `Hide Image${item.urls.length > 1 ? 's' : ''}`
                       : `Show Image${item.urls.length > 1 ? 's' : ''}`}{' '}
                     ({item.urls.length})
                   </Button>
                 )}
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <span
-                className={`text-xs px-2 py-1 rounded ${
-                  statusStyles[item.status?.toLowerCase()]
-                }`}
-              >
-                {item.status}
-              </span>
-              <span
-                className={`text-xs px-2 py-1 rounded ${
-                  statusStyles[item.odooStatus?.toLowerCase()]
-                }`}
-              >
-                {item.odooStatus}
-              </span>
-            </div>
-          </div>
+              </Group>
+            </Stack>
+            <Stack gap={4} align="flex-end">
+              <StatusBadge status={item.status} size="sm" />
+              {!isUnsynced(item) && (
+                <StatusBadge status={item.odooStatus} size="sm" />
+              )}
+            </Stack>
+          </Group>
 
           {/* Expense Image Gallery */}
           {item?.urls &&
             item.urls.length > 0 &&
-            toggleExpenseImages.includes(item.id) && (
-              <div className="mt-4">
-                <div className="flex flex-wrap gap-2">
-                  {item.urls.map((imageUrl: string, index: number) => (
-                    <div
-                      key={index}
-                      className="relative group"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                    >
-                      <img
-                        src={imageUrl}
-                        alt={`Expense image ${index + 1}`}
-                        className="w-24 h-24 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedImage(imageUrl);
-                        }}
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
+            toggleExpenseImages.includes(item._id) && (
+              <Group gap="xs" mt="xs">
+                {item.urls.map((imageUrl: string, index: number) => (
+                  <Image
+                    key={index}
+                    src={imageUrl}
+                    alt={`Expense image ${index + 1}`}
+                    w={96}
+                    h={96}
+                    fit="cover"
+                    radius="md"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedImage(imageUrl);
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ))}
+              </Group>
             )}
-        </CardContent>
+        </Stack>
       </Card>
 
       {/* Image Modal */}
       {selectedImage && (
-        <Dialog
-          open={!!selectedImage}
-          onOpenChange={() => setSelectedImage(null)}
-        >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-            <div className="relative">
-              <img
-                src={selectedImage}
-                alt="Expense Image"
-                className="w-full h-auto max-h-[85vh] object-contain"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ImagePreviewModal
+          src={selectedImage}
+          alt="Expense Image"
+          onClose={() => setSelectedImage(null)}
+        />
       )}
     </>
   );
 };
 
 const EventDetailsArea = () => {
+  // The event's `_id` (the route still calls it `eventId`).
   const { eventId } = useParams();
-  const user = useSelector(selectUser);
-  const [loading, setLoading] = useState(false);
-  const [attendeeLoading, setAttendeeLoading] = useState(false);
+  const theme = useMantineTheme();
+  const [loading, setLoading] = useState(true);
   const [updateCheckListLoading, setUpdateCheckListLoading] = useState(false);
   const [verifyEventLoading, setVerifyEventLoading] = useState(false);
   const [rsmAttendedLoading, setRsmAttendedLoading] = useState(false);
   const [eventExpenses, setEventExpenses] = useState([]);
   const [selectedCheckList, setSelectedCheckList] = useState([]);
   const [attendeeList, setAttendeeList] = useState([]);
+  const [failedActions, setFailedActions] = useState([]);
   const [toggleExpenseImages, setToggleExpenseImages] = useState<string[]>([]);
   const [selectedEventImage, setSelectedEventImage] = useState<string | null>(
     null,
   );
   const [event, setEvent] = useState({
+    _id: '',
     id: '',
+    status: '',
+    syncError: '',
     order_sequence: '',
     date_begin: '',
     date_end: '',
@@ -240,41 +329,26 @@ const EventDetailsArea = () => {
   const [isChecklistDialogOpen, setIsChecklistDialogOpen] = useState(false);
   const [isAttendedDialogOpen, setIsAttendedDialogOpen] = useState(false);
 
-  const fetchAttendees = () => {
-    const onSuccessfulFetch = (data) => {
-      setAttendeeList(
-        data.data.sort(
-          (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
-        ),
-      );
-      setAttendeeLoading(false);
-    };
-    const onError = () => {
-      toast.error('Failed to fetch attendees', { description: 'Error' });
-      setAttendeeLoading(false);
-    };
-    setAttendeeLoading(true);
+  // The event with its attendees and expenses. `quiet` reloads in place.
+  const fetchEventDetails = (quiet = false) => {
+    if (!quiet) setLoading(true);
     callApi(
       'GET',
-      `/events/attendee?event_id=${eventId}`,
-      null,
-      onSuccessfulFetch,
-      onError,
-    );
-  };
-
-  const fetchEventDetails = () => {
-    setLoading(true);
-    callApi(
-      'GET',
-      `/events/single?event_id=${eventId}`,
+      `/v2/events/${eventId}`,
       null,
       (response) => {
         setLoading(false);
         setEvent(response.data.event);
-        setSelectedCheckList(response.data.event.check_list_ids);
+        setSyncPending(!!response.data.pending);
+        setFailedActions(response.data.failedActions || []);
+        setAttendeeList(
+          [...(response.data.attendees || [])].sort(
+            (a, b) =>
+              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+          ),
+        );
         setEventExpenses(
-          response.data.expenses.sort(
+          [...(response.data.expenses || [])].sort(
             (a, b) =>
               dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
           ),
@@ -282,7 +356,11 @@ const EventDetailsArea = () => {
       },
       () => {
         setLoading(false);
-        toast.error('Failed to fetch event details', { description: 'Error' });
+        if (!quiet) {
+          toast.error('Failed to fetch event details', {
+            description: 'Error',
+          });
+        }
       },
     );
   };
@@ -290,69 +368,58 @@ const EventDetailsArea = () => {
   useEffect(() => {
     if (eventId) {
       fetchEventDetails();
-      fetchAttendees();
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
+  // `syncPending` covers changes to a synced event (stage, photos, verify…),
+  // which leave every record's own status untouched while they are sent.
+  const [syncPending, setSyncPending] = useState(false);
+  useQueuedRefresh(
+    [event, ...attendeeList, ...eventExpenses, { status: syncPending ? 'queued' : '' }],
+    () =>
+    fetchEventDetails(true),
+  );
+
+  // An action shows its effect at once and is then sent to Odoo. Reload now,
+  // and once more shortly after: if Odoo refuses, the old value is back and
+  // the event carries the reason.
+  const followUp = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => clearTimeout(followUp.current), []);
+  const refreshAfterAction = () => {
+    fetchEventDetails(true);
+    clearTimeout(followUp.current);
+    followUp.current = setTimeout(() => fetchEventDetails(true), 5000);
+  };
+
+  // Actions need the event in Odoo.
+  const unsynced = isUnsynced(event);
+  const unsyncedHint = isQueued(event)
+    ? 'Being sent to Odoo…'
+    : 'Not in Odoo yet';
+
   const onConfirmEvent = () => {
-    const onSuccess = () => {
-      setVerifyEventLoading(false);
-      setIsVerifyDialogOpen(false);
-      toast.success('Event confirmed successfully', { description: 'Success' });
-      fetchEventDetails();
-    };
-    const onError = (error) => {
-      setVerifyEventLoading(false);
-      setIsVerifyDialogOpen(false);
-      toast.error(error?.message || 'Failed to confirm event', {
-        description: 'Error',
-      });
-    };
-
-    const onConfirmEventSuccess = () => {
-      const payload = { verified: true, verified_by: user?.id };
-
-      callApi(
-        'PATCH',
-        `/events/update?event_id=${event.id}`,
-        payload,
-        () => {
-          onSuccess();
-        },
-        (error) => {
-          onError(error);
-        },
-      );
-    };
-
-    const onConfirmEventError = () => {
-      setVerifyEventLoading(false);
-      setIsVerifyDialogOpen(false);
-      toast.error('Failed to confirm event via server API', {
-        description: 'Error',
-      });
-    };
-
-    // Enhanced data payload with more comprehensive user info
-    const data = {
-      event_id: event.id,
-      rsm_id: user?.id,
-      user_id: user?.id,
-      is_verify: 'True',
-      is_verified: true,
-      verified_by: user?.id,
-      rsm_comments: '',
-    };
-
     setVerifyEventLoading(true);
-    callServerAPI(
+    callApi(
       'POST',
-      `/verify/event`,
-      { data },
-      onConfirmEventSuccess,
-      onConfirmEventError,
+      `/v2/events/${event._id}/verify`,
+      { rsm_comments: '' },
+      () => {
+        setVerifyEventLoading(false);
+        setIsVerifyDialogOpen(false);
+        toast.success('Event confirmed and queued for Odoo', {
+          description: 'Success',
+        });
+        refreshAfterAction();
+      },
+      (error) => {
+        setVerifyEventLoading(false);
+        setIsVerifyDialogOpen(false);
+        toast.error(errorMessage(error, 'Failed to confirm event'), {
+          description: 'Error',
+        });
+      },
     );
   };
 
@@ -363,82 +430,54 @@ const EventDetailsArea = () => {
       });
       return;
     }
-    const data = {
-      event_id: event.id,
-      checkist_ids: selectedCheckList.map((item) => item.id),
-    };
-    const onSuccess = () => {
-      setUpdateCheckListLoading(false);
-      toast.success('Event checklist updated successfully', {
-        description: 'Success',
-      });
-      setIsChecklistDialogOpen(false);
-    };
-    const onError = () => {
-      setUpdateCheckListLoading(false);
-      toast.error('Failed to update event checklist', { description: 'Error' });
-    };
-    const onServerSuccess = () => {
-      callApi(
-        'PATCH',
-        `/events/update?event_id=${event.id}`,
-        { check_list_ids: selectedCheckList },
-        onSuccess,
-        onError,
-      );
-    };
-    const onServerError = () => {
-      setUpdateCheckListLoading(false);
-      toast.error('Failed to update event checklist', { description: 'Error' });
-    };
     setUpdateCheckListLoading(true);
-    callServerAPI(
+    callApi(
       'POST',
-      `/post/check/checklist`,
-      { data },
-      onServerSuccess,
-      onServerError,
+      `/v2/events/${event._id}/checklist`,
+      {
+        check_list_ids: selectedCheckList.map((item) => ({
+          id: item.id,
+          name: item.name,
+        })),
+      },
+      () => {
+        setUpdateCheckListLoading(false);
+        toast.success('Event checklist updated and queued for Odoo', {
+          description: 'Success',
+        });
+        setIsChecklistDialogOpen(false);
+        refreshAfterAction();
+      },
+      (error) => {
+        setUpdateCheckListLoading(false);
+        toast.error(errorMessage(error, 'Failed to update event checklist'), {
+          description: 'Error',
+        });
+      },
     );
   };
 
   const onConfirmEventAttended = () => {
-    const onSuccess = () => {
-      setRsmAttendedLoading(false);
-      setIsAttendedDialogOpen(false);
-      toast.success('Event marked as attended successfully', {
-        description: 'Success',
-      });
-      fetchEventDetails();
-    };
-    const onError = (error) => {
-      setRsmAttendedLoading(false);
-      setIsAttendedDialogOpen(false);
-      toast.error(error?.message || 'Failed to confirm event', {
-        description: 'Error',
-      });
-    };
-    const onConfirmEventSuccess = () => {
-      callApi(
-        'PATCH',
-        `/events/update?event_id=${event.id}`,
-        { rsmAttended: true },
-        onSuccess,
-        onError,
-      );
-    };
-    const onConfirmEventError = () => {
-      setRsmAttendedLoading(false);
-      setIsAttendedDialogOpen(false);
-      toast.error('Failed to confirm event', { description: 'Error' });
-    };
-    const data = { event_id: event.id };
     setRsmAttendedLoading(true);
-    callServerAPI(
+    callApi(
       'POST',
-      `/rsm/attended`,
-      { data },
-      onConfirmEventSuccess,
-      onConfirmEventError,
+      `/v2/events/${event._id}/attended`,
+      {},
+      () => {
+        setRsmAttendedLoading(false);
+        setIsAttendedDialogOpen(false);
+        toast.success('Event marked as attended and queued for Odoo', {
+          description: 'Success',
+        });
+        refreshAfterAction();
+      },
+      (error) => {
+        setRsmAttendedLoading(false);
+        setIsAttendedDialogOpen(false);
+        toast.error(errorMessage(error, 'Failed to confirm event'), {
+          description: 'Error',
+        });
+      },
     );
   };
 
@@ -447,338 +486,325 @@ const EventDetailsArea = () => {
   );
 
   return (
-    <div className="container">
+    <Container size="xl" px={0}>
       {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
+        <Group justify="center" h={256}>
+          <Loader />
+        </Group>
       ) : (
         <>
-          <div className="flex flex-col gap-6">
-            <Card>
-              <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
-                <CardTitle className="text-xl">
-                  Event Detail #{event?.id}
-                </CardTitle>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-5 w-5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-56" align="end">
-                    <DropdownMenuItem
-                      disabled={
-                        !canVerifyEvent ||
-                        event?.event_stage?.name
-                          ?.toLowerCase()
-                          ?.includes('cancel') ||
-                        event?.verified
+          <PageHeader
+            title={<>Event Detail {recordRef(event)}</>}
+            actions={
+              <Menu position="bottom-end" width={224} shadow="md">
+                <Menu.Target>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    size="lg"
+                    aria-label="Event actions"
+                  >
+                    <MoreVertical size={20} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {unsynced && <Menu.Label>{unsyncedHint}</Menu.Label>}
+                  <Menu.Item
+                    disabled={
+                      unsynced ||
+                      !canVerifyEvent ||
+                      event?.event_stage?.name
+                        ?.toLowerCase()
+                        ?.includes('cancel') ||
+                      event?.verified
+                    }
+                    onClick={() => {
+                      if (!canVerifyEvent) {
+                        toast.error(
+                          "Actions can only be performed at least four days after the event's end date, and the event has not been cancelled.",
+                          {
+                            description: 'Error',
+                          },
+                        );
+                        return;
                       }
-                      onClick={() => {
-                        if (!canVerifyEvent) {
-                          toast.error(
-                            "Actions can only be performed at least four days after the event's end date, and the event has not been cancelled.",
-                            {
-                              description: 'Error',
-                            },
-                          );
-                          return;
-                        }
-                        setIsVerifyDialogOpen(true);
-                      }}
-                    >
-                      {event?.event_stage?.name
+                      setIsVerifyDialogOpen(true);
+                    }}
+                  >
+                    {event?.event_stage?.name?.toLowerCase()?.includes('cancel')
+                      ? 'Cancelled'
+                      : event?.verified
+                        ? 'Verified'
+                        : 'Verify Event'}
+                  </Menu.Item>
+                  <Menu.Item
+                    disabled={
+                      unsynced ||
+                      event?.rsmAttended ||
+                      event?.event_stage?.name
                         ?.toLowerCase()
                         ?.includes('cancel')
-                        ? 'Cancelled'
-                        : event?.verified
-                          ? 'Verified'
-                          : 'Verify Event'}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={
-                        event?.rsmAttended ||
+                    }
+                    onClick={() => {
+                      if (event?.rsmAttended) {
+                        toast.error('Event is already marked as attended', {
+                          description: 'Error',
+                        });
+                        return;
+                      }
+                      if (
                         event?.event_stage?.name
                           ?.toLowerCase()
                           ?.includes('cancel')
+                      ) {
+                        toast.error('Event is already cancelled', {
+                          description: 'Error',
+                        });
+                        return;
                       }
+                      setIsAttendedDialogOpen(true);
+                    }}
+                  >
+                    {event?.rsmAttended ? 'Attended' : 'Mark as Attended'}
+                  </Menu.Item>
+                  {!event?.event_stage?.name
+                    ?.toLowerCase()
+                    ?.includes('cancel') && (
+                    <Menu.Item
+                      disabled={unsynced}
                       onClick={() => {
-                        if (event?.rsmAttended) {
-                          toast.error('Event is already marked as attended', {
-                            description: 'Error',
-                          });
-                          return;
-                        }
-                        if (
-                          event?.event_stage?.name
-                            ?.toLowerCase()
-                            ?.includes('cancel')
-                        ) {
-                          toast.error('Event is already cancelled', {
-                            description: 'Error',
-                          });
-                          return;
-                        }
-                        setIsAttendedDialogOpen(true);
+                        setSelectedCheckList(event?.check_list_ids || []);
+                        setIsChecklistDialogOpen(true);
                       }}
                     >
-                      {event?.rsmAttended ? 'Attended' : 'Mark as Attended'}
-                    </DropdownMenuItem>
-                    {!event?.event_stage?.name
-                      ?.toLowerCase()
-                      ?.includes('cancel') && (
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setIsChecklistDialogOpen(true);
-                        }}
-                      >
-                        Update Checklist
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <Label className="text-sm text-gray-500">
-                      Event Address
-                    </Label>
-                    <p className="font-medium mt-1">{event?.name}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm text-gray-500">Event Time</Label>
-                    <p className="font-medium mt-1">
-                      {event?.date_begin} - {event?.date_end}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-sm text-gray-500">Location</Label>
-                    <p className="font-medium mt-1">
-                      {event?.region?.name} - {event?.territory?.name}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-sm text-gray-500">Event Type</Label>
-                    <p className="font-medium mt-1">
-                      {event?.event_type?.name}
-                    </p>
-                  </div>
-                  {event?.crops?.length > 0 && (
-                    <div className="md:col-span-2">
-                      <Label className="text-sm text-gray-500">Crops</Label>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      Update Checklist
+                    </Menu.Item>
+                  )}
+                </Menu.Dropdown>
+              </Menu>
+            }
+          />
+
+          <Stack gap="lg">
+            {unsynced ? (
+              <Alert color={isQueued(event) ? 'blue' : 'red'} variant="light">
+                {isQueued(event)
+                  ? 'Being sent to Odoo… Actions are available once it is there.'
+                  : `This event could not be sent to Odoo${
+                      event?.syncError ? `: ${event.syncError}` : '.'
+                    } Its organiser can fix and resend it.`}
+              </Alert>
+            ) : (
+              <RefusedChanges
+                eventId={event._id}
+                actions={failedActions}
+                onChanged={refreshAfterAction}
+              />
+            )}
+            <Paper withBorder shadow="sm" p="lg">
+              <Grid gutter="lg">
+                <Grid.Col span={{ base: 12, md: 6 }}>
+                  <Field label="Event Address">{event?.name}</Field>
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, md: 6 }}>
+                  <Field label="Event Time">
+                    {event?.date_begin} - {event?.date_end}
+                  </Field>
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, md: 6 }}>
+                  <Field label="Location">
+                    {event?.region?.name} - {event?.territory?.name}
+                  </Field>
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, md: 6 }}>
+                  <Field label="Event Type">{event?.event_type?.name}</Field>
+                </Grid.Col>
+                {event?.crops?.length > 0 && (
+                  <Grid.Col span={12}>
+                    <Field label="Crops">
+                      <Group gap="xs" mt={4}>
                         {event?.crops?.map((item, idx) => (
-                          <span
+                          <Badge
                             key={idx}
-                            className="bg-green-50 text-green-700 px-2 py-1 rounded text-sm font-medium border border-green-100"
+                            variant="light"
+                            color="green"
+                            tt="none"
                           >
                             {item.name}
-                          </span>
+                          </Badge>
                         ))}
-                      </div>
-                    </div>
-                  )}
-                  {event?.demo_products?.length > 0 && (
-                    <div className="md:col-span-2">
-                      <Label className="text-sm text-gray-500">Products</Label>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      </Group>
+                    </Field>
+                  </Grid.Col>
+                )}
+                {event?.demo_products?.length > 0 && (
+                  <Grid.Col span={12}>
+                    <Field label="Products">
+                      <Group gap="xs" mt={4}>
                         {event?.demo_products?.map((item, idx) => (
-                          <span
+                          <Badge
                             key={idx}
-                            className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-sm font-medium border border-blue-100"
+                            variant="light"
+                            color="blue"
+                            tt="none"
                           >
                             {item.name}
-                          </span>
+                          </Badge>
                         ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                      </Group>
+                    </Field>
+                  </Grid.Col>
+                )}
+              </Grid>
+            </Paper>
 
             {/* Event Images Section */}
             {event?.images && event.images.length > 0 && (
-              <Card>
-                <CardHeader className="border-b pb-4">
-                  <CardTitle className="text-lg font-semibold">
-                    Event Images
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                    {event.images.map((imageUrl: string, index: number) => (
-                      <div key={index} className="relative group aspect-square">
-                        <img
-                          src={imageUrl}
-                          alt={`Event image ${index + 1}`}
-                          className="w-full h-full object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity border border-gray-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedEventImage(imageUrl);
-                          }}
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                        <div
-                          className="absolute inset-0 rounded-lg flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-all cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedEventImage(imageUrl);
-                          }}
-                        >
-                          <Eye
-                            className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 drop-shadow-md"
-                            size={24}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <Paper withBorder shadow="sm" p="lg">
+                <Title order={4} mb="md">
+                  Event Images
+                </Title>
+                <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="md">
+                  {event.images.map((imageUrl: string, index: number) => (
+                    <AspectRatio key={index} ratio={1}>
+                      <Image
+                        src={imageUrl}
+                        alt={`Event image ${index + 1}`}
+                        fit="cover"
+                        radius="md"
+                        style={{ cursor: 'pointer' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedEventImage(imageUrl);
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    </AspectRatio>
+                  ))}
+                </SimpleGrid>
+              </Paper>
             )}
 
             {attendeeList.length > 0 && (
-              <Card>
-                <CardHeader className="border-b pb-4">
-                  <CardTitle className="text-lg font-semibold">
-                    Attendees ({attendeeList.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  {attendeeLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                    </div>
-                  ) : attendeeList.length === 0 ? (
-                    <p className="text-center text-sm text-gray-500 py-8">
-                      No attendees found
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {attendeeList.map((item, index) => {
-                        const isFarmerHost = item.farmer_verify;
-                        return (
-                          <div
-                            key={index}
-                            className=" rounded-lg p-4 border border-gray-100 hover:shadow-sm transition-shadow"
+              <Paper withBorder shadow="sm" p="lg">
+                <Title order={4} mb="md">
+                  Attendees ({attendeeList.length})
+                </Title>
+                {attendeeList.length === 0 ? (
+                  <Text ta="center" size="sm" c="dimmed" py="xl">
+                    No attendees found
+                  </Text>
+                ) : (
+                  <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+                    {attendeeList.map((item) => {
+                      const isFarmerHost = item.farmer_verify;
+                      // Queued, failed or being removed: not settled in Odoo.
+                      const pending =
+                        isUnsynced(item) || item.status === 'removing';
+                      return (
+                        <Card key={item._id} withBorder padding="md">
+                          <Group
+                            justify="space-between"
+                            align="flex-start"
+                            wrap="nowrap"
+                            mb="xs"
                           >
-                            <div className="flex justify-between items-start mb-2">
-                              <p className="font-semibold text-gray-900">
-                                {item.name}
-                              </p>
+                            <Text fw={600}>{item.name}</Text>
+                            <Group gap="xs" wrap="nowrap">
+                              {pending && (
+                                <StatusBadge status={item.status} size="sm" />
+                              )}
                               {isFarmerHost && (
-                                <span
-                                  className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusStyles.sent}`}
+                                <Badge
+                                  color="green"
+                                  variant="light"
+                                  size="sm"
+                                  tt="capitalize"
                                 >
                                   Host
-                                </span>
+                                </Badge>
                               )}
-                            </div>
-                            <div className="space-y-1 text-sm text-gray-600">
-                              <p className="flex items-center gap-2">
-                                <span className="text-gray-400 text-xs uppercase tracking-wider">
-                                  Phone
-                                </span>
-                                {item.phone_no}
-                              </p>
-                              <p className="flex items-center gap-2">
-                                <span className="text-gray-400 text-xs uppercase tracking-wider">
-                                  Area
-                                </span>
-                                {item.land_area} Acre
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                            </Group>
+                          </Group>
+                          <Stack gap={4}>
+                            <Group gap="xs">
+                              <Text size="xs" c="dimmed" tt="uppercase">
+                                Phone
+                              </Text>
+                              <Text size="sm">{item.phone_no}</Text>
+                            </Group>
+                            <Group gap="xs">
+                              <Text size="xs" c="dimmed" tt="uppercase">
+                                Area
+                              </Text>
+                              <Text size="sm">{item.land_area} Acre</Text>
+                            </Group>
+                          </Stack>
+                        </Card>
+                      );
+                    })}
+                  </SimpleGrid>
+                )}
+              </Paper>
             )}
 
             {eventExpenses.length > 0 && (
-              <Card>
-                <CardHeader className="border-b pb-4">
-                  <CardTitle className="text-lg font-semibold">
-                    Expenses ({eventExpenses.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {eventExpenses.map((item, index) => (
-                      <ExpensesCard
-                        key={index}
-                        item={item}
-                        toggleExpenseImages={toggleExpenseImages}
-                        setToggleExpenseImages={setToggleExpenseImages}
-                      />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <Paper withBorder shadow="sm" p="lg">
+                <Title order={4} mb="md">
+                  Expenses ({eventExpenses.length})
+                </Title>
+                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                  {eventExpenses.map((item) => (
+                    <ExpensesCard
+                      key={item._id}
+                      item={item}
+                      toggleExpenseImages={toggleExpenseImages}
+                      setToggleExpenseImages={setToggleExpenseImages}
+                    />
+                  ))}
+                </SimpleGrid>
+              </Paper>
             )}
-          </div>
+          </Stack>
 
-          <p className="text-xs text-gray-500 text-center mt-4">
+          <Text size="xs" c="dimmed" ta="center" mt="md">
             Actions can only be performed at least four days after the event's
             end date, and the event has not been cancelled.
-          </p>
+          </Text>
 
-          <Dialog
-            open={isVerifyDialogOpen}
-            onOpenChange={setIsVerifyDialogOpen}
+          <ConfirmModal
+            opened={isVerifyDialogOpen}
+            onClose={() => setIsVerifyDialogOpen(false)}
+            onConfirm={onConfirmEvent}
+            title="Confirm Event"
+            confirmLabel="Yes"
+            cancelLabel="No"
+            loading={verifyEventLoading}
+            color={theme.primaryColor}
           >
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Confirm Event</DialogTitle>
-              </DialogHeader>
-              <p>Are you sure you want to confirm the event (#{event.id})?</p>
-              <div className="flex gap-2">
-                <Button onClick={onConfirmEvent} disabled={verifyEventLoading}>
-                  {verifyEventLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  Yes
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsVerifyDialogOpen(false)}
-                  disabled={verifyEventLoading}
-                >
-                  No
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+            Are you sure you want to confirm the event ({recordRef(event)})?
+          </ConfirmModal>
 
-          <Dialog
-            open={isChecklistDialogOpen}
-            onOpenChange={setIsChecklistDialogOpen}
+          <Modal
+            opened={isChecklistDialogOpen}
+            onClose={() => setIsChecklistDialogOpen(false)}
+            title={<Text fw={600}>Event Template Check List</Text>}
           >
-            <DialogContent className="max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Event Template Check List</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-2">
-                {event?.event_type?.check_list_ids.length > 0 ? (
-                  event?.event_type?.check_list_ids.map((item) => (
-                    <Card
-                      key={item.id}
-                      className="flex flex-row items-center justify-between p-4 "
-                    >
-                      <span className="text-sm">{item.name}</span>
+            <Stack gap="xs">
+              {event?.event_type?.check_list_ids.length > 0 ? (
+                event?.event_type?.check_list_ids.map((item) => (
+                  <Card key={item.id} withBorder padding="sm">
+                    <Group justify="space-between" wrap="nowrap">
+                      <Text size="sm">{item.name}</Text>
                       <Checkbox
+                        aria-label={item.name}
                         checked={selectedCheckList.some(
                           (check) => check.id === item.id,
                         )}
-                        onCheckedChange={(checked) => {
+                        onChange={(e) => {
+                          const checked = e.currentTarget.checked;
                           setSelectedCheckList((prev) => {
                             if (checked) {
                               return [...prev, item];
@@ -790,85 +816,49 @@ const EventDetailsArea = () => {
                           });
                         }}
                       />
-                    </Card>
-                  ))
-                ) : (
-                  <p className="text-center text-gray-500">
-                    No check list found
-                  </p>
-                )}
-                <Button
-                  onClick={onCheckListUpdate}
-                  disabled={updateCheckListLoading}
-                  className="w-full mt-4"
-                >
-                  {updateCheckListLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  Update
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+                    </Group>
+                  </Card>
+                ))
+              ) : (
+                <Text ta="center" c="dimmed">
+                  No check list found
+                </Text>
+              )}
+              <Button
+                onClick={onCheckListUpdate}
+                loading={updateCheckListLoading}
+                fullWidth
+                mt="md"
+              >
+                Update
+              </Button>
+            </Stack>
+          </Modal>
 
-          <Dialog
-            open={isAttendedDialogOpen}
-            onOpenChange={setIsAttendedDialogOpen}
+          <ConfirmModal
+            opened={isAttendedDialogOpen}
+            onClose={() => setIsAttendedDialogOpen(false)}
+            onConfirm={onConfirmEventAttended}
+            title="Mark as Attended"
+            confirmLabel="Yes"
+            cancelLabel="No"
+            loading={rsmAttendedLoading}
+            color={theme.primaryColor}
           >
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Mark as Attended</DialogTitle>
-              </DialogHeader>
-              <p>Are you sure you want to mark this event as attended?</p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={onConfirmEventAttended}
-                  disabled={rsmAttendedLoading}
-                >
-                  {rsmAttendedLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  Yes
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsAttendedDialogOpen(false)}
-                  disabled={rsmAttendedLoading}
-                >
-                  No
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+            Are you sure you want to mark this event as attended?
+          </ConfirmModal>
 
           {/* Event Image Modal */}
           {selectedEventImage && (
-            <Dialog
-              open={!!selectedEventImage}
-              onOpenChange={() => setSelectedEventImage(null)}
-            >
-              <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-                <div className="relative">
-                  <img
-                    src={selectedEventImage}
-                    alt="Event Image"
-                    className="w-full h-auto max-h-[85vh] object-contain"
-                  />
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    className="absolute top-2 right-2"
-                    onClick={() => setSelectedEventImage(null)}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ImagePreviewModal
+              src={selectedEventImage}
+              alt="Event Image"
+              onClose={() => setSelectedEventImage(null)}
+            />
           )}
         </>
       )}
-    </div>
+    </Container>
   );
 };
 

@@ -1,51 +1,97 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { format } from 'date-fns';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Loader2 } from 'lucide-react';
-import { callApi, callServerAPI } from '@/api';
-import { selectUser } from '@/redux/slices/AuthSlice';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
+  Alert,
+  Button,
+  Container,
+  FileInput,
+  Group,
+  Loader,
+  Paper,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+  Textarea,
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
 import { CalendarIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { uploadToCloudinary } from '@/utils';
 import dayjs from 'dayjs';
-import { toast } from 'sonner';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
+import { selectUser } from '@/redux/slices/AuthSlice';
+import { uploadToCloudinary } from '@/utils';
+import { toast } from '@/lib/toast';
+import SelectBox from '@/components/Select';
+import { PageHeader } from '@/components/app';
+
+const RESOURCE = '/v2/fleet/services';
+
+// Fields with their own input; any other error is shown in an alert.
+const FORM_FIELDS = [
+  'date',
+  'service_type_id',
+  'odometer_value',
+  'cost',
+  'name',
+  'url',
+];
+
+// Same rule the calendar had before: no future dates, nothing older than
+// five days, and not today's day of the month.
+const isDateDisabled = (value: string) => {
+  const date = dayjs(value).toDate();
+  return (
+    date > new Date() ||
+    date < new Date(new Date().setDate(new Date().getDate() - 5)) ||
+    date.getDate() === new Date().getDate()
+  );
+};
 
 const AddMaintenance = () => {
   const navigate = useNavigate();
-  const { user, vehicle, company } = useSelector(selectUser);
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date());
-  const [openDatePicker, setOpenDatePicker] = useState(false);
-  const [remarks, setRemarks] = useState('');
+  // A failed maintenance record opened from the list to be fixed and sent
+  // again.
+  const record = useLocation().state?.record;
+  const { user, vehicle } = useSelector(selectUser);
+  const [amount, setAmount] = useState(String(record?.cost ?? ''));
+  const [date, setDate] = useState<Date>(
+    record?.date ? dayjs(record.date.slice(0, 10)).toDate() : new Date(),
+  );
+  const [remarks, setRemarks] = useState<string>(record?.name || '');
   const [loading, setLoading] = useState(false);
   const [serviceTypes, setServiceTypes] = useState<
-    Array<{ id: string; name: string; category: string; is_attachment?: boolean }>
+    Array<{
+      id: string;
+      name: string;
+      category: string;
+      is_attachment?: boolean;
+    }>
   >([]);
-  const [serviceType, setServiceType] = useState('');
+  const [serviceType, setServiceType] = useState(
+    String(record?.service_type_id ?? ''),
+  );
   const [lastReading, setLastReading] = useState('');
-  const [odometer, setOdometer] = useState('');
+  const [odometer, setOdometer] = useState(
+    String(record?.odometer_value ?? ''),
+  );
   const [file, setFile] = useState(null);
   const [buttonLoading, setButtonLoading] = useState(false);
   const [attachmentAllowed, setAttachmentAllowed] = useState(false);
+  // Receipt already uploaded for the record being edited.
+  const existingUrl: string = record?.url || '';
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two records.
+  const requestId = useRef(newRequestId());
 
   const getPreviousReading = async () => {
     const onSuccess = (response: {
@@ -63,24 +109,19 @@ const AddMaintenance = () => {
     };
 
     setLoading(true);
-    callServerAPI(
-      'POST',
-      `/get/previous/odometer`,
-      {
-        data: {
-          service_type_id: serviceType,
-          vehicle_id: vehicle.vehicle_id,
-        },
-      },
+    callApi(
+      'GET',
+      `/v2/lookups/previous-odometer?service_type_id=${Number(serviceType)}&vehicle_id=${Number(vehicle.vehicle_id)}`,
+      null,
       onSuccess,
-      onError
+      onError,
     );
   };
 
   useEffect(() => {
     if (serviceType) {
       const selectedServiceType = serviceTypes.find(
-        (item) => Number(item.id) === Number(serviceType)
+        (item) => Number(item.id) === Number(serviceType),
       );
       if (selectedServiceType) {
         setAttachmentAllowed(selectedServiceType?.is_attachment ?? false);
@@ -118,8 +159,8 @@ const AddMaintenance = () => {
               name: string;
               category: string;
               is_attachment?: boolean;
-            }) => item.category === 'service'
-          )
+            }) => item.category === 'service',
+          ),
         );
       };
       const onError = () => {
@@ -142,7 +183,7 @@ const AddMaintenance = () => {
       return;
     }
 
-    if (!file && attachmentAllowed) {
+    if (!file && !existingUrl && attachmentAllowed) {
       toast.error('Please upload a receipt image');
       return;
     }
@@ -167,9 +208,9 @@ const AddMaintenance = () => {
         uploadImage = await uploadToCloudinary(
           file,
           `maintenance-${user.name}/${dayjs().format('MMMM-YYYY')}`,
-          `maintenance-${user.name}-${dayjs().format('DD-MM-YYYY')}-${dayjs().format('HH-mm-ss')}`
+          `maintenance-${user.name}-${dayjs().format('DD-MM-YYYY')}-${dayjs().format('HH-mm-ss')}`,
         );
-      } catch (error) {
+      } catch {
         setLoading(false);
         setButtonLoading(false);
         toast.error('Failed to upload image');
@@ -177,68 +218,68 @@ const AddMaintenance = () => {
       }
     }
 
-    const data = {
+    const body = {
+      category: 'service',
       name: remarks,
       service_type_id: Number(serviceType),
-      vehicle_id: Number(vehicle.vehicle_id),
-      date: dayjs(date).format('DD-MM-YYYY'),
+      date: dayjs(date).format('YYYY-MM-DD'),
       cost: Number(amount),
-      employee_id: Number(user.employee_id),
-      id: 0,
-      odometer_value: odometer,
-      payment_method: 'paid_by_cash',
-      liters: 0,
-      url: uploadImage || '',
-      company_id: Number(company.id),
+      odometer_value: Number(odometer),
+      url: uploadImage || existingUrl,
     };
 
-    const onCreateSuccess = () => {
+    const onSuccess = () => {
       setLoading(false);
       setButtonLoading(false);
-      toast.success('Maintenance record added successfully');
+      toast.success(
+        record
+          ? 'Maintenance record updated and queued'
+          : 'Maintenance record saved and queued',
+      );
       navigate('/maintenance');
     };
 
-    const onCreateError = () => {
+    const onError = (error) => {
       setLoading(false);
       setButtonLoading(false);
-      toast.error('Failed to add maintenance record');
+      const message = errorMessage(error, 'Failed to add maintenance record');
+      setFieldError({ field: error?.field, message });
+      toast.error(message);
     };
 
-    // Call API
-    const onSuccess = (response: {
-      status: string;
-      data: {
-        expense: Array<{
-          id: number;
-          state: string;
-        }>;
-      };
-    }) => {
+    setFieldError(null);
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
       callApi(
         'POST',
-        '/fleet/service',
-        {
-          ...data,
-          id: response.data.expense[0].id,
-          liters: -1,
-          odooStatus: response.data.expense[0].state,
-          category: 'service',
-          date: date,
-          url: uploadImage || '',
-        },
-        onCreateSuccess,
-        onCreateError
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
       );
-    };
+    }
+  };
 
-    const onError = () => {
-      setLoading(false);
-      setButtonLoading(false);
-      toast.error('Failed to add maintenance record');
-    };
+  const errorFor = (field: string) =>
+    fieldError?.field === field ? fieldError.message : undefined;
 
-    callServerAPI('POST', '/post/fleet', { data }, onSuccess, onError);
+  const handleFileChange = (selectedFile: File | null) => {
+    if (
+      selectedFile &&
+      (selectedFile.type.startsWith('image/') ||
+        selectedFile.type === 'application/pdf')
+    ) {
+      if (selectedFile.size > 5 * 1024 * 1024) {
+        toast.error('File size exceeds 5MB limit');
+        setFile(null);
+        return;
+      }
+      setFile(selectedFile);
+    } else {
+      toast.error('Please select a valid image or PDF file');
+      setFile(null);
+    }
   };
 
   const serviceTypesData =
@@ -248,159 +289,116 @@ const AddMaintenance = () => {
     })) || [];
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <Container size="sm" px={0}>
+      <PageHeader
+        title={record ? 'Edit Maintenance' : 'Add Maintenance'}
+        back
+      />
       {loading ? (
-        <Loader2 className="h-8 w-8 animate-spin" />
+        <Group justify="center" h={256}>
+          <Loader />
+        </Group>
       ) : (
-        <Card className="w-full max-w-2xl">
-          <CardHeader>
-            <CardTitle>Add Maintenance</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
-                <Popover open={openDatePicker} onOpenChange={setOpenDatePicker}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'w-full justify-start text-left font-normal',
-                        !date && 'text-muted-foreground'
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {date ? format(date, 'dd-MM-yyyy') : 'Pick a date'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={date}
-                      onSelect={(selectedDate) => {
-                        if (selectedDate) {
-                          setDate(selectedDate);
-                          setOpenDatePicker(false);
-                        }
-                      }}
-                      disabled={(date) =>
-                        date > new Date() ||
-                        date <
-                          new Date(
-                            new Date().setDate(new Date().getDate() - 5)
-                          ) ||
-                        date.getDate() === new Date().getDate()
-                      }
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="serviceType">Service Type</Label>
-                <Select value={serviceType} onValueChange={setServiceType}>
-                  <SelectTrigger id="serviceType" className="w-full">
-                    <SelectValue placeholder="Select service type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {serviceTypesData.map((item, index) => (
-                      <SelectItem key={index} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lastReading">Last Meter Reading</Label>
-                <Input
-                  id="lastReading"
-                  placeholder="Last meter reading"
-                  value={lastReading}
-                  disabled
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="odometer">Odometer</Label>
-                <Input
-                  id="odometer"
-                  type="number"
-                  placeholder="Enter odometer reading"
-                  value={odometer}
-                  onChange={(e) => setOdometer(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="amount">Amount</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  placeholder="Enter amount"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
-              </div>
+        <Paper withBorder shadow="sm" p="lg">
+          <Stack gap="md">
+            {fieldError && !FORM_FIELDS.includes(fieldError.field) && (
+              <Alert color="red" variant="light">
+                {fieldError.message}
+              </Alert>
+            )}
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+              <DatePickerInput
+                label="Date"
+                placeholder="Pick a date"
+                valueFormat="DD-MM-YYYY"
+                leftSection={<CalendarIcon size={16} />}
+                value={date}
+                onChange={(value) => {
+                  if (value) {
+                    setDate(dayjs(value).toDate());
+                  }
+                }}
+                excludeDate={isDateDisabled}
+                error={errorFor('date')}
+              />
+              {/* SelectBox hands back the id as it came from the API. */}
+              <SelectBox
+                label="Service Type"
+                placeholder="Select service type"
+                data={serviceTypesData}
+                selectedValue={serviceType}
+                onValueChange={setServiceType}
+                error={errorFor('service_type_id')}
+              />
+              <TextInput
+                label="Last Meter Reading"
+                placeholder="Last meter reading"
+                value={lastReading}
+                disabled
+              />
+              <TextInput
+                label="Odometer"
+                type="number"
+                placeholder="Enter odometer reading"
+                value={odometer}
+                onChange={(e) => setOdometer(e.currentTarget.value)}
+                error={errorFor('odometer_value')}
+              />
+              <TextInput
+                label="Amount"
+                type="number"
+                placeholder="Enter amount"
+                value={amount}
+                onChange={(e) => setAmount(e.currentTarget.value)}
+                error={errorFor('cost')}
+              />
               {attachmentAllowed && (
-                <div className="space-y-2">
-                  <Label htmlFor="file">Upload Receipt</Label>
-                  <Input
-                    id="file"
-                    type="file"
+                <Stack gap={4}>
+                  <FileInput
+                    label="Upload Receipt"
+                    placeholder="Choose file"
                     accept="image/*,application/pdf"
-                    onChange={(e) => {
-                      const selectedFile = e.target.files[0];
-                      if (
-                        selectedFile &&
-                        (selectedFile.type.startsWith('image/') ||
-                          selectedFile.type === 'application/pdf')
-                      ) {
-                        if (selectedFile.size > 5 * 1024 * 1024) {
-                          toast.error('File size exceeds 5MB limit');
-                          setFile(null);
-                          return;
-                        }
-                        setFile(selectedFile);
-                      } else {
-                        toast.error('Please select a valid image or PDF file');
-                        setFile(null);
-                      }
-                    }}
-                    className="cursor-pointer"
+                    value={file}
+                    onChange={handleFileChange}
+                    error={errorFor('url')}
                   />
-                  {file && (
-                    <p className="text-sm text-gray-600">
+                  {file ? (
+                    <Text size="sm" c="dimmed">
                       Selected: {file.name}
-                    </p>
+                    </Text>
+                  ) : (
+                    existingUrl && (
+                      <Text size="sm" c="dimmed">
+                        A receipt is already attached. Choose a file to replace
+                        it.
+                      </Text>
+                    )
                   )}
-                </div>
+                </Stack>
               )}
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="remarks">Remarks</Label>
-                <Textarea
-                  id="remarks"
-                  placeholder="Enter remarks"
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  rows={4}
-                />
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end">
-              <Button
-                onClick={handleAddMaintenance}
-                disabled={buttonLoading}
-                className="w-full"
-              >
-                {buttonLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
-                Submit
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </SimpleGrid>
+
+            <Textarea
+              label="Remarks"
+              placeholder="Enter remarks"
+              value={remarks}
+              onChange={(e) => setRemarks(e.currentTarget.value)}
+              error={errorFor('name')}
+              rows={4}
+            />
+
+            <Button
+              onClick={handleAddMaintenance}
+              loading={buttonLoading}
+              fullWidth
+              mt="xs"
+            >
+              {record ? 'Save & Resend' : 'Submit'}
+            </Button>
+          </Stack>
+        </Paper>
       )}
-    </div>
+    </Container>
   );
 };
 

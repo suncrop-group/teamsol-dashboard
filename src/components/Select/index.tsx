@@ -1,21 +1,27 @@
-import { useState, useCallback } from 'react';
-import { Check, ChevronsUpDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { MultiSelect, Select } from '@mantine/core';
+
+interface Option {
+  label: string;
+  // Ids are numbers in most lists; Mantine wants strings, so they are
+  // converted here and the original value is handed back to the caller.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  value: any;
+}
+
+interface SelectBoxProps {
+  data: Option[];
+  // Single: the selected value. Multiple: the selected options.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  selectedValue: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onValueChange: (value: any) => void;
+  placeholder?: string;
+  label?: string;
+  disabled?: boolean;
+  required?: boolean;
+  isMultiple?: boolean;
+  error?: string;
+}
 
 const SelectBox = ({
   data,
@@ -26,112 +32,63 @@ const SelectBox = ({
   disabled = false,
   required = false,
   isMultiple = false,
-}) => {
-  const [open, setOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  error,
+}: SelectBoxProps) => {
+  // Mantine throws on repeated option values, so a list with a duplicated id
+  // keeps its first entry only.
+  const seen = new Set<string>();
+  const options = (data || [])
+    .map((item) => ({
+      label: String(item.label ?? ''),
+      value: String(item.value),
+    }))
+    .filter((item) => {
+      if (seen.has(item.value)) return false;
+      seen.add(item.value);
+      return true;
+    });
+  const original = (value: string) =>
+    (data || []).find((item) => String(item.value) === value);
 
-  const filteredData = searchQuery
-    ? data.filter((item) =>
-        item.label.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : data;
-
-  const handleSelect = useCallback(
-    (value) => {
-      if (isMultiple) {
-        if (selectedValue?.find((item) => item.value === value)) {
-          onValueChange(selectedValue.filter((item) => item.value !== value));
-        } else {
-          onValueChange([
-            ...(selectedValue || []),
-            data.find((item) => item.value === value),
-          ]);
+  if (isMultiple) {
+    return (
+      <MultiSelect
+        label={label}
+        placeholder={selectedValue?.length ? undefined : placeholder}
+        data={options}
+        value={(selectedValue || []).map((item: Option) => String(item.value))}
+        onChange={(values) =>
+          onValueChange(values.map(original).filter(Boolean))
         }
-      } else {
-        onValueChange(value);
-        setOpen(false);
-        setSearchQuery('');
-      }
-    },
-    [isMultiple, selectedValue, onValueChange, data]
-  );
-
-  const displayValue = isMultiple
-    ? selectedValue?.length > 0
-      ? selectedValue.map((item) => item.label).join(', ')
-      : placeholder
-    : selectedValue
-    ? data.find((d) => d.value === selectedValue)?.label || placeholder
-    : placeholder;
+        disabled={disabled}
+        withAsterisk={required}
+        error={error}
+        searchable
+        clearable
+        nothingFoundMessage="No items to display"
+      />
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-2">
-      {label && (
-        <Label className="text-base font-medium text-gray-900">
-          {label}
-          {required && <span className="text-red-500">*</span>}
-        </Label>
-      )}
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            className={cn(
-              'w-full justify-between rounded-lg border border-gray-300 bg-white px-4 py-3 text-base',
-              disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
-              selectedValue ? 'text-gray-900' : 'text-gray-400'
-            )}
-            disabled={disabled}
-          >
-            <span className="truncate">{displayValue}</span>
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-          <Command>
-            <CommandInput
-              placeholder="Search..."
-              value={searchQuery}
-              onValueChange={setSearchQuery}
-              className="h-10"
-            />
-            <CommandList>
-              <CommandEmpty>No items to display</CommandEmpty>
-              <CommandGroup>
-                {filteredData?.length > 0 &&
-                  filteredData.map((item) => (
-                    <CommandItem
-                      key={item.value}
-                      value={item.value}
-                      onSelect={() => handleSelect(item.value)}
-                      className={cn(
-                        'cursor-pointer',
-                        isMultiple &&
-                          selectedValue?.find((i) => i.value === item.value)
-                          ? 'bg-blue-50'
-                          : ''
-                      )}
-                    >
-                      <Check
-                        className={cn(
-                          'mr-2 h-4 w-4',
-                          isMultiple &&
-                            selectedValue?.find((i) => i.value === item.value)
-                            ? 'opacity-100 text-blue-500'
-                            : 'opacity-0'
-                        )}
-                      />
-                      {item.label}
-                    </CommandItem>
-                  ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-    </div>
+    <Select
+      label={label}
+      placeholder={placeholder}
+      data={options}
+      value={
+        selectedValue === undefined || selectedValue === null || selectedValue === ''
+          ? null
+          : String(selectedValue)
+      }
+      onChange={(value) => onValueChange(value === null ? '' : original(value)?.value)}
+      disabled={disabled}
+      withAsterisk={required}
+      error={error}
+      searchable
+      // Picking the selected option again must not clear the field.
+      allowDeselect={false}
+      nothingFoundMessage="No items to display"
+    />
   );
 };
 

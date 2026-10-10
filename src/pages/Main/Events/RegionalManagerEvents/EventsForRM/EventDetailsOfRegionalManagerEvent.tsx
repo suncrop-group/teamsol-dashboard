@@ -1,55 +1,168 @@
-import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useEffect, useRef, useState } from 'react';
+import { debounce } from 'lodash';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { toast } from 'sonner';
+  ActionIcon,
+  Alert,
+  AspectRatio,
+  Badge,
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Container,
+  FileButton,
+  Group,
+  Image,
+  Loader,
+  Menu,
+  Modal,
+  Paper,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+  ThemeIcon,
+  Title,
+  UnstyledButton,
+  useMantineTheme,
+} from '@mantine/core';
+import { toast } from '@/lib/toast';
 import dayjs from 'dayjs';
 import { parseCustomDate, priceFormatter, uploadToCloudinary } from '@/utils';
-import { callApi, callServerAPI } from '@/api';
-import { selectUser } from '@/redux/slices/AuthSlice';
+import { callApi } from '@/api';
 import {
-  Loader2,
+  errorMessage,
+  isFailed,
+  isQueued,
+  isUnsynced,
+  newRequestId,
+  recordRef,
+  useQueuedRefresh,
+} from '@/api/v2';
+import {
   CheckCheck,
   Eye,
   MoreVertical,
+  Pencil,
+  RotateCw,
   Trash2,
   Upload,
   X,
 } from 'lucide-react';
+import {
+  ConfirmModal,
+  EmptyState,
+  FailedActions,
+  PageHeader,
+  StatusBadge,
+} from '@/components/app';
 
-const statusStyles = {
-  sent: 'bg-green-100 text-green-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  canceled: 'bg-red-100 text-red-800',
-  quotation: 'bg-blue-100 text-blue-800',
-  approved: 'bg-green-100 text-green-800',
-  draft: 'bg-red-100 text-red-800',
-  confirmed: 'bg-green-100 text-green-800',
-  approval: 'bg-yellow-100 text-yellow-800',
-  approve: 'bg-green-100 text-green-800',
-  submit: 'bg-green-100 text-green-800',
-  'to report': 'bg-yellow-100 text-yellow-800',
-  submitted: 'bg-blue-100 text-blue-800',
-  done: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  refuse: 'bg-red-100 text-red-800',
-  refused: 'bg-red-100 text-red-800',
-  cancelled: 'bg-red-100 text-red-800',
+const EMPTY_ATTENDEE = {
+  name: '',
+  phone_no: '',
+  land_area: '',
+  farmer_verify: false,
+};
+// Attendee form fields a server error can be shown under.
+const ATTENDEE_FIELDS = ['name', 'phone_no', 'land_area'];
+
+const Field = ({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) => (
+  <Box>
+    <Text size="sm" c="dimmed">
+      {label}
+    </Text>
+    <Text fw={500} mt={4}>
+      {children}
+    </Text>
+  </Box>
+);
+
+// Changes to a synced event or its attendees that Odoo refused. The event
+// went back to how it was; each change can be sent again or dismissed.
+const RefusedChanges = ({
+  eventId,
+  actions,
+  onChanged,
+}: {
+  eventId: string;
+  actions: { jobId: string; label: string; error: string }[];
+  onChanged: () => void;
+}) => {
+  // `<jobId>:retry` or `<jobId>:dismiss` while that call is in flight.
+  const [busy, setBusy] = useState('');
+
+  if (!actions?.length) return null;
+
+  const run = (jobId: string, kind: 'retry' | 'dismiss') => {
+    setBusy(`${jobId}:${kind}`);
+    callApi(
+      kind === 'retry' ? 'POST' : 'DELETE',
+      kind === 'retry'
+        ? `/v2/events/${eventId}/actions/${jobId}/retry`
+        : `/v2/events/${eventId}/actions/${jobId}`,
+      kind === 'retry' ? {} : null,
+      () => {
+        setBusy('');
+        toast.success(kind === 'retry' ? 'Queued again' : 'Dismissed');
+        onChanged();
+      },
+      (error) => {
+        setBusy('');
+        toast.error(
+          errorMessage(
+            error,
+            kind === 'retry'
+              ? 'Could not send it again. Please try again.'
+              : 'Could not dismiss. Please try again.',
+          ),
+        );
+        // It may already be gone or resent: show what is there now.
+        onChanged();
+      },
+    );
+  };
+
+  return (
+    <Stack gap='xs'>
+      {actions.map((action) => (
+        <Alert key={action.jobId} color='red' variant='light' p='xs'>
+          <Group justify='space-between' align='center' gap='sm'>
+            <Text size='sm' flex={1} miw={200}>
+              Could not send: {action.label} — {action.error}
+            </Text>
+            <Group gap={6} wrap='nowrap'>
+              <Button
+                size='compact-xs'
+                variant='default'
+                onClick={() => run(action.jobId, 'retry')}
+                loading={busy === `${action.jobId}:retry`}
+                disabled={!!busy}
+              >
+                Try again
+              </Button>
+              <Button
+                size='compact-xs'
+                variant='subtle'
+                color='red'
+                onClick={() => run(action.jobId, 'dismiss')}
+                loading={busy === `${action.jobId}:dismiss`}
+                disabled={!!busy}
+              >
+                Dismiss
+              </Button>
+            </Group>
+          </Group>
+        </Alert>
+      ))}
+    </Stack>
+  );
 };
 
 const ExpensesCard = ({
@@ -61,150 +174,130 @@ const ExpensesCard = ({
 
   const toggleImages = () => {
     setToggleExpenseImages((prev) => {
-      if (prev.includes(item.id)) {
-        return prev.filter((id) => id !== item.id);
+      if (prev.includes(item._id)) {
+        return prev.filter((id) => id !== item._id);
       } else {
-        return [...prev, item.id];
+        return [...prev, item._id];
       }
     });
   };
 
   return (
     <>
-      <Card
-        className={`w-full ${
-          item.odooStatus === 'draft' ? 'cursor-pointer' : 'cursor-default'
-        }`}
-        onClick={() => item.odooStatus !== 'draft' && null}
-      >
-        <CardContent className="p-4 space-y-2">
-          <div className="flex justify-between items-center">
-            <p className="text-sm font-medium">{item?.name}</p>
-            <p className="text-sm">{priceFormatter(item?.amount)} PKR</p>
-          </div>
-          <div className="flex justify-between items-end">
-            <p className="text-sm text-gray-600">#{item?.id}</p>
-          </div>
-          <div className="flex justify-between items-center gap-2">
-            <div className="space-y-2 flex-1">
-              <p className="text-sm text-gray-600">
+      <Card withBorder padding="md">
+        <Stack gap="xs">
+          <Group justify="space-between" wrap="nowrap" align="flex-start">
+            <Text size="sm" fw={500} flex={1}>
+              {item?.name}
+            </Text>
+            <Text size="sm">{priceFormatter(item?.amount)} PKR</Text>
+          </Group>
+          <Text size="sm" c="dimmed">
+            {recordRef(item)}
+          </Text>
+          <Group justify="space-between" wrap="nowrap" align="center">
+            <Stack gap="xs" flex={1}>
+              <Text size="sm" c="dimmed">
                 {dayjs(item?.createdAt).format('MM-DD-YYYY')} -{' '}
                 {dayjs(item?.createdAt).format('hh:mm A')} 🕒
-              </p>
+              </Text>
               {item?.description && (
-                <p className="text-sm text-gray-600 line-clamp-2">
+                <Text size="sm" c="dimmed" lineClamp={2}>
                   {item?.description}
-                </p>
+                </Text>
               )}
-              <div className="flex items-center gap-2">
+              <Group gap="xs">
                 {item?.url && (
-                  <Button
-                    variant="link"
-                    size="sm"
+                  <ActionIcon
+                    variant="subtle"
+                    color="blue"
+                    aria-label="View attachment"
                     onClick={() => window.open(item?.url, '_blank')}
-                    className="p-0 h-auto"
                   >
-                    <Eye className="h-4 w-4 text-blue-600" />
-                  </Button>
+                    <Eye size={16} />
+                  </ActionIcon>
                 )}
                 {item?.urls && item.urls.length > 0 && (
                   <Button
-                    variant="ghost"
-                    size="sm"
+                    variant="subtle"
+                    size="compact-sm"
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleImages();
                     }}
-                    className="text-blue-500 hover:text-blue-700 p-0 h-auto"
                   >
-                    {toggleExpenseImages.includes(item.id)
+                    {toggleExpenseImages.includes(item._id)
                       ? `Hide Image${item.urls.length > 1 ? 's' : ''}`
                       : `Show Image${item.urls.length > 1 ? 's' : ''}`}{' '}
                     ({item.urls.length})
                   </Button>
                 )}
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <span
-                className={`text-xs px-2 py-1 rounded ${
-                  statusStyles[item.status?.toLowerCase()]
-                }`}
-              >
-                {item.status}
-              </span>
-              <span
-                className={`text-xs px-2 py-1 rounded ${
-                  statusStyles[item.odooStatus?.toLowerCase()]
-                }`}
-              >
-                {item.odooStatus}
-              </span>
-            </div>
-          </div>
+              </Group>
+            </Stack>
+            <Stack gap={4} align="flex-end">
+              <StatusBadge status={item.status} size="sm" />
+              {!isUnsynced(item) && (
+                <StatusBadge status={item.odooStatus} size="sm" />
+              )}
+            </Stack>
+          </Group>
 
           {/* Expense Image Gallery */}
           {item?.urls &&
             item.urls.length > 0 &&
-            toggleExpenseImages.includes(item.id) && (
-              <div className="mt-4">
-                <div className="flex flex-wrap gap-2">
-                  {item.urls.map((imageUrl, index) => (
-                    <div
-                      key={index}
-                      className="relative group"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                    >
-                      <img
-                        src={imageUrl}
-                        alt={`Expense image ${index + 1}`}
-                        className="w-24 h-24 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedImage(imageUrl);
-                        }}
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
+            toggleExpenseImages.includes(item._id) && (
+              <Group gap="xs" mt="xs">
+                {item.urls.map((imageUrl, index) => (
+                  <Image
+                    key={index}
+                    src={imageUrl}
+                    alt={`Expense image ${index + 1}`}
+                    w={96}
+                    h={96}
+                    fit="cover"
+                    radius="md"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedImage(imageUrl);
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ))}
+              </Group>
             )}
-        </CardContent>
+        </Stack>
       </Card>
 
       {/* Image Modal */}
       {selectedImage && (
-        <Dialog
-          open={!!selectedImage}
-          onOpenChange={() => setSelectedImage(null)}
+        <Modal
+          opened
+          onClose={() => setSelectedImage(null)}
+          size="xl"
+          padding="xs"
         >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-            <div className="relative">
-              <img
-                src={selectedImage}
-                alt="Expense Image"
-                className="w-full h-auto max-h-[85vh] object-contain"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+          <Image
+            src={selectedImage}
+            alt="Expense Image"
+            mah="85vh"
+            fit="contain"
+            radius="md"
+          />
+        </Modal>
       )}
     </>
   );
 };
 
 const EventDetailsOfRegionalManagerEvent = () => {
+  // The event's `_id` (the route still calls it `eventId`).
   const { eventId } = useParams();
-  const user = useSelector(selectUser);
-  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
   const [eventExpenses, setEventExpenses] = useState([]);
-  const [attendeeLoading, setAttendeeLoading] = useState(false);
   const [addAttendeeLoading, setAddAttendeeLoading] = useState(false);
   const [updateStatusFetching, setUpdateStatusFetching] = useState(false);
   const [verifyEventLoading, setVerifyEventLoading] = useState(false);
@@ -212,15 +305,23 @@ const EventDetailsOfRegionalManagerEvent = () => {
   const [eventStageList, setEventStageList] = useState([]);
   const [updatingEventStageId, setUpdatingEventStageId] = useState(null);
   const [attendeesSearchResult, setAttendeesSearchResult] = useState([]);
-  const [attendee, setAttendee] = useState({
-    name: '',
-    phone_no: '',
-    land_area: '',
-    farmer_verify: false,
-  });
+  const [attendee, setAttendee] = useState(EMPTY_ATTENDEE);
+  // The failed attendee being fixed in the attendee form, if any.
+  const [editingAttendee, setEditingAttendee] = useState(null);
+  // Field the server blamed for a refused attendee, and its message.
+  const [attendeeError, setAttendeeError] = useState<{
+    field: string;
+    message: string;
+  } | null>(null);
+  const [failedActions, setFailedActions] = useState([]);
+  // One key per attendee form, so a double submit cannot add them twice.
+  const attendeeRequestId = useRef(newRequestId());
   const [attendeeList, setAttendeeList] = useState([]);
   const [event, setEvent] = useState({
+    _id: '',
     id: '',
+    status: '',
+    syncError: '',
     order_sequence: '',
     date_begin: '',
     date_end: '',
@@ -249,43 +350,33 @@ const EventDetailsOfRegionalManagerEvent = () => {
   const [toggleExpenseImages, setToggleExpenseImages] = useState([]);
   const [eventImagesRemoving, setEventImagesRemoving] = useState([]);
   const [selectedEventImage, setSelectedEventImage] = useState(null);
+  // Attendee `_id`s with a remove or resend call in flight.
   const [attendeesRemoving, setAttendeesRemoving] = useState([]);
-  const [removingAttendeeId, setRemovingAttendeeId] = useState(null);
+  const [attendeesResending, setAttendeesResending] = useState([]);
+  const [removingAttendee, setRemovingAttendee] = useState(null);
   const [isAttendeeRemoveDialogOpen, setIsAttendeeRemoveDialogOpen] =
     useState(false);
 
-  const fetchAttendees = () => {
-    setAttendeeLoading(true);
+  // The event with its attendees and expenses. `quiet` reloads in place;
+  // `onMissing` runs instead of the error toast when the event is gone.
+  const fetchEventDetails = (quiet = false, onMissing?: () => void) => {
+    if (!quiet) setLoading(true);
     callApi(
       'GET',
-      `/events/attendee?event_id=${eventId}`,
-      null,
-      (data) => {
-        setAttendeeList(
-          data.data.sort(
-            (a, b) =>
-              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
-          ),
-        );
-        setAttendeeLoading(false);
-      },
-      () => {
-        toast.error('Failed to fetch attendees', { description: 'Error' });
-        setAttendeeLoading(false);
-      },
-    );
-  };
-
-  const fetchEventDetails = (loading = true) => {
-    if (loading) setLoading(true);
-    callApi(
-      'GET',
-      `/events/single?event_id=${eventId}`,
+      `/v2/events/${eventId}`,
       null,
       (response) => {
         setEvent(response.data.event);
+        setSyncPending(!!response.data.pending);
+        setFailedActions(response.data.failedActions || []);
+        setAttendeeList(
+          [...(response.data.attendees || [])].sort(
+            (a, b) =>
+              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+          ),
+        );
         setEventExpenses(
-          response.data.expenses.sort(
+          [...(response.data.expenses || [])].sort(
             (a, b) =>
               dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
           ),
@@ -293,8 +384,14 @@ const EventDetailsOfRegionalManagerEvent = () => {
         setLoading(false);
       },
       () => {
-        toast.error('Failed to fetch event details', { description: 'Error' });
         setLoading(false);
+        if (onMissing) {
+          onMissing();
+        } else if (!quiet) {
+          toast.error('Failed to fetch event details', {
+            description: 'Error',
+          });
+        }
       },
     );
   };
@@ -302,7 +399,6 @@ const EventDetailsOfRegionalManagerEvent = () => {
   useEffect(() => {
     if (eventId) {
       fetchEventDetails();
-      fetchAttendees();
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -314,41 +410,55 @@ const EventDetailsOfRegionalManagerEvent = () => {
     }
   }, [event]);
 
+  // `syncPending` covers changes to a synced event (stage, photos, verify…),
+  // which leave every record's own status untouched while they are sent.
+  const [syncPending, setSyncPending] = useState(false);
+  useQueuedRefresh(
+    [event, ...attendeeList, ...eventExpenses, { status: syncPending ? 'queued' : '' }],
+    () =>
+    fetchEventDetails(true),
+  );
+
+  // An action shows its effect at once and is then sent to Odoo. Reload now,
+  // and once more shortly after: if Odoo refuses, the old value is back and
+  // the event carries the reason.
+  const followUp = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => clearTimeout(followUp.current), []);
+  const refreshAfterAction = () => {
+    fetchEventDetails(true);
+    clearTimeout(followUp.current);
+    followUp.current = setTimeout(() => fetchEventDetails(true), 5000);
+  };
+
+  // Actions need the event in Odoo.
+  const unsynced = isUnsynced(event);
+  const unsyncedHint = isQueued(event)
+    ? 'Being sent to Odoo…'
+    : 'Not in Odoo yet';
+
   const onStageChange = (stageId) => {
     if (event?.event_stage_id === stageId) {
       toast.error('Event stage is already updated', { description: 'Error' });
       return;
     }
     setUpdatingEventStageId(stageId);
-    callServerAPI(
-      'POST',
-      `/event/stage/change`,
-      { data: { event_id: event.id, stage_id: stageId } },
+    callApi(
+      'PATCH',
+      `/v2/events/${event._id}/stage`,
+      { stage_id: stageId },
       () => {
-        callApi(
-          'PATCH',
-          '/events/stage',
-          { event_id: event.id, stage_id: stageId },
-          () => {
-            toast.success('Event Stage Updated successfully', {
-              description: 'Success',
-            });
-            fetchEventDetails(false);
-            setIsUpdateStageOpen(false);
-            setUpdateStatusFetching(false);
-            setUpdatingEventStageId(null);
-          },
-          () => {
-            toast.error('Failed to update event stage', {
-              description: 'Error',
-            });
-            setUpdateStatusFetching(false);
-            setUpdatingEventStageId(null);
-          },
-        );
+        toast.success('Event stage updated and queued for Odoo', {
+          description: 'Success',
+        });
+        refreshAfterAction();
+        setIsUpdateStageOpen(false);
+        setUpdateStatusFetching(false);
+        setUpdatingEventStageId(null);
       },
-      () => {
-        toast.error('Failed to update event stage', { description: 'Error' });
+      (error) => {
+        toast.error(errorMessage(error, 'Failed to update event stage'), {
+          description: 'Error',
+        });
         setUpdateStatusFetching(false);
         setUpdatingEventStageId(null);
       },
@@ -356,98 +466,49 @@ const EventDetailsOfRegionalManagerEvent = () => {
   };
 
   const onConfirmEvent = () => {
-    const payload = { verified: true, verified_by: user?.id };
-    const onSuccess = () => {
-      setVerifyEventLoading(false);
-      setIsVerifyEventOpen(false);
-      toast.success('Event confirmed successfully', { description: 'Success' });
-      fetchEventDetails();
-    };
-
-    const onError = (error) => {
-      setVerifyEventLoading(false);
-      setIsVerifyEventOpen(false);
-      toast.error(error?.message || 'Failed to confirm event', {
-        description: 'Error',
-      });
-    };
-
-    // First approach: Try direct main API update (matching mobile logic)
-    const onConfirmEventSuccess = () => {
-      callApi(
-        'PATCH',
-        `/events/update?event_id=${event.id}`,
-        payload,
-        () => {
-          onSuccess();
-        },
-        (error) => {
-          onError(error);
-        },
-      );
-    };
-
-    const onConfirmEventError = () => {
-      setVerifyEventLoading(false);
-      setIsVerifyEventOpen(false);
-      toast.error('Failed to confirm event via server API', {
-        description: 'Error',
-      });
-    };
-
     setVerifyEventLoading(true);
-
-    const data = {
-      event_id: event.id,
-      rsm_id: user?.id,
-      user_id: user?.id,
-      is_verify: 'True',
-      is_verified: true,
-      verified_by: user?.id,
-      rsm_comments: '',
-    };
-
-    callServerAPI(
+    callApi(
       'POST',
-      `/verify/event`,
-      { data },
-      onConfirmEventSuccess,
-      onConfirmEventError,
+      `/v2/events/${event._id}/verify`,
+      { rsm_comments: '' },
+      () => {
+        setVerifyEventLoading(false);
+        setIsVerifyEventOpen(false);
+        toast.success('Event confirmed and queued for Odoo', {
+          description: 'Success',
+        });
+        refreshAfterAction();
+      },
+      (error) => {
+        setVerifyEventLoading(false);
+        setIsVerifyEventOpen(false);
+        toast.error(errorMessage(error, 'Failed to confirm event'), {
+          description: 'Error',
+        });
+      },
     );
   };
 
   const onConfirmEventAttended = () => {
     setRsmAttendedLoading(true);
-    callServerAPI(
+    callApi(
       'POST',
-      `/rsm/attended`,
-      { data: { event_id: event.id } },
-      () => {
-        callApi(
-          'PATCH',
-          `/events/update?event_id=${event.id}`,
-          { rsmAttended: true },
-          () => {
-            setRsmAttendedLoading(false);
-            setIsMarkAttendedOpen(false);
-            toast.success('Event marked as attended successfully', {
-              description: 'Success',
-            });
-            fetchEventDetails();
-          },
-          (error) => {
-            setRsmAttendedLoading(false);
-            setIsMarkAttendedOpen(false);
-            toast.error(error?.message || 'Failed to confirm event', {
-              description: 'Error',
-            });
-          },
-        );
-      },
+      `/v2/events/${event._id}/attended`,
+      {},
       () => {
         setRsmAttendedLoading(false);
         setIsMarkAttendedOpen(false);
-        toast.error('Failed to confirm event', { description: 'Error' });
+        toast.success('Event marked as attended and queued for Odoo', {
+          description: 'Success',
+        });
+        refreshAfterAction();
+      },
+      (error) => {
+        setRsmAttendedLoading(false);
+        setIsMarkAttendedOpen(false);
+        toast.error(errorMessage(error, 'Failed to confirm event'), {
+          description: 'Error',
+        });
       },
     );
   };
@@ -459,67 +520,137 @@ const EventDetailsOfRegionalManagerEvent = () => {
     }
     if (attendee.phone_no.length < 10) return;
 
-    setAddAttendeeLoading(true);
-    const data: {
-      event_id: string;
-      name: string;
-      phone_no: string;
-      land_area: string;
-      farmer_verify: string;
-      id?: number;
-    } = {
-      event_id: event.id,
+    const editing = editingAttendee;
+    const onSuccess = () => {
+      setAddAttendeeLoading(false);
+      if (editing) {
+        toast.success('Attendee updated and queued');
+      } else {
+        toast.success('Attendee saved and queued', {
+          description: 'Success',
+        });
+        attendeeRequestId.current = newRequestId();
+      }
+      fetchEventDetails(true);
+      setIsAddAttendeeOpen(false);
+      setEditingAttendee(null);
+      setAttendee(EMPTY_ATTENDEE);
+      setAttendeesSearchResult([]);
+    };
+    const onError = (error) => {
+      setAddAttendeeLoading(false);
+      const message = errorMessage(
+        error,
+        editing ? 'Failed to update attendee' : 'Failed to add attendee',
+      );
+      // Under the field the server names; anything else as a toast.
+      if (ATTENDEE_FIELDS.includes(error?.field)) {
+        setAttendeeError({ field: error.field, message });
+      } else {
+        toast.error(message, { description: 'Error' });
+      }
+    };
+    const body = {
       name: attendee.name,
       phone_no: attendee.phone_no,
       land_area: attendee.land_area,
-      farmer_verify: attendee.farmer_verify ? 'True' : 'False',
+      farmer_verify: attendee.farmer_verify,
     };
-    callServerAPI(
+
+    setAttendeeError(null);
+    setAddAttendeeLoading(true);
+    if (editing) {
+      // Same attendee, fixed and queued again.
+      callApi(
+        'PUT',
+        `/v2/events/${event._id}/attendees/${editing._id}`,
+        body,
+        onSuccess,
+        onError,
+      );
+    } else {
+      callApi(
+        'POST',
+        `/v2/events/${event._id}/attendees`,
+        { ...body, clientRequestId: attendeeRequestId.current },
+        onSuccess,
+        onError,
+      );
+    }
+  };
+
+  // Open the attendee form with a failed attendee, to fix and resend it.
+  const openAttendeeEdit = (item) => {
+    setEditingAttendee(item);
+    setAttendee({
+      name: item.name || '',
+      phone_no: item.phone_no || '',
+      land_area: String(item.land_area ?? ''),
+      farmer_verify: !!item.farmer_verify,
+    });
+    setAttendeeError(null);
+    setAttendeesSearchResult([]);
+    setIsAddAttendeeOpen(true);
+  };
+
+  const closeAttendeeDialog = () => {
+    setIsAddAttendeeOpen(false);
+    setAttendeeError(null);
+    // Leave nothing of the edited attendee in the add form.
+    if (editingAttendee) {
+      setEditingAttendee(null);
+      setAttendee(EMPTY_ATTENDEE);
+      setAttendeesSearchResult([]);
+    }
+  };
+
+  const attendeeFieldError = (field: string) =>
+    attendeeError?.field === field ? attendeeError.message : undefined;
+
+  // Send a failed attendee to Odoo again, unchanged.
+  const resendAttendee = (item) => {
+    if (attendeesResending.includes(item._id)) return;
+    setAttendeesResending((prev) => [...prev, item._id]);
+    const done = () =>
+      setAttendeesResending((prev) => prev.filter((id) => id !== item._id));
+    callApi(
       'POST',
-      `/post/event/attendees`,
-      { data },
-      (response: { data: { id?: number } }) => {
-        if (response.data.id) {
-          data.id = response.data.id;
-          callApi(
-            'POST',
-            '/events/attendee',
-            {
-              ...data,
-              farmer_verify: attendee.farmer_verify,
-            },
-            () => {
-              setAddAttendeeLoading(false);
-              toast.success('Attendee added successfully', {
-                description: 'Success',
-              });
-              fetchAttendees();
-              setIsAddAttendeeOpen(false);
-              setAttendee({
-                name: '',
-                phone_no: '',
-                land_area: '',
-                farmer_verify: false,
-              });
-              setAttendeesSearchResult([]);
-            },
-            () => {
-              setAddAttendeeLoading(false);
-              toast.error('Failed to add attendee', { description: 'Error' });
-            },
-          );
-        }
-      },
+      `/v2/events/${event._id}/attendees/${item._id}/retry`,
+      {},
       () => {
-        setAddAttendeeLoading(false);
-        toast.error('Failed to add attendee', { description: 'Error' });
+        done();
+        toast.success('Queued again');
+        fetchEventDetails(true);
+      },
+      (error) => {
+        done();
+        toast.error(errorMessage(error, 'Could not resend. Please try again.'));
       },
     );
   };
 
+  // Look up attendees already known by phone, half a second after typing
+  // stops, so an existing farmer can be picked instead of retyped.
+  const debouncedSearchAttendee = useRef(
+    debounce((phone_no: string) => {
+      if (!phone_no || phone_no.length < 3) {
+        setAttendeesSearchResult([]);
+        return;
+      }
+      callApi(
+        'GET',
+        `/events/attendee/search?phone_no=${encodeURIComponent(phone_no)}`,
+        null,
+        (response) => setAttendeesSearchResult(response.data || []),
+        () => setAttendeesSearchResult([]),
+      );
+    }, 500),
+  ).current;
+
   const handlePhoneNumberChange = (text) => {
     setAttendee((prev) => ({ ...prev, phone_no: text }));
-    // Search functionality can be added here if needed
+    setAttendeeError(null);
+    debouncedSearchAttendee(text);
   };
 
   const fetchEventStagesList = () => {
@@ -559,42 +690,22 @@ const EventDetailsOfRegionalManagerEvent = () => {
 
       const uploadedUrls = await Promise.all(uploadPromises);
 
-      // First upload to server
-      await new Promise((resolve, reject) => {
-        callServerAPI(
-          'POST',
-          '/post/images',
-          {
-            data: {
-              urls: uploadedUrls,
-              company_id: user.company_id,
-              event_id: event.id,
-            },
-          },
-          resolve,
-          reject,
-        );
-      });
-
-      // Then update local database
       await new Promise((resolve, reject) => {
         callApi(
-          'PATCH',
-          `/events/update?event_id=${event.id}`,
-          {
-            images: uploadedUrls,
-          },
+          'POST',
+          `/v2/events/${event._id}/images`,
+          { urls: uploadedUrls },
           resolve,
           reject,
         );
       });
 
-      toast.success('Files uploaded successfully');
+      toast.success('Files uploaded and queued for Odoo');
       setFiles([]);
-      fetchEventDetails(false);
+      refreshAfterAction();
     } catch (error) {
       console.error('Upload error:', error);
-      toast.error('Failed to upload files');
+      toast.error(errorMessage(error, 'Failed to upload files'));
     } finally {
       setRemoveLoading(false);
     }
@@ -610,51 +721,31 @@ const EventDetailsOfRegionalManagerEvent = () => {
     setEventImagesRemoving((prev) => [...prev, imageUrl]);
 
     try {
-      // First delete from server
-      await new Promise((resolve, reject) => {
-        callServerAPI(
-          'POST',
-          '/delete/event/images',
-          {
-            data: {
-              urls: [imageUrl],
-              event_id: event.id,
-              company_id: user.company_id,
-            },
-          },
-          resolve,
-          reject,
-        );
-      });
-
-      // Then update local database
+      // The URL goes in the query string: a DELETE carries no body.
       await new Promise((resolve, reject) => {
         callApi(
-          'PATCH',
-          `/events/update?event_id=${event.id}`,
-          {
-            images: event?.images
-              ? event.images.filter((img) => img !== imageUrl)
-              : [],
-          },
+          'DELETE',
+          `/v2/events/${event._id}/images?url=${encodeURIComponent(imageUrl)}`,
+          null,
           resolve,
           reject,
         );
       });
 
-      toast.success('Image removed successfully');
-      fetchEventDetails(false);
+      toast.success('Image removed and queued for Odoo');
+      refreshAfterAction();
     } catch (error) {
       console.error('Delete error:', error);
-      toast.error('Failed to remove image');
+      toast.error(errorMessage(error, 'Failed to remove image'));
     } finally {
       setEventImagesRemoving((prev) => prev.filter((img) => img !== imageUrl));
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(e.target.files || []);
+  const theme = useMantineTheme();
+  const resetFileInput = useRef<() => void>(null);
 
+  const handleFileChange = (selectedFiles: File[]) => {
     if (selectedFiles.length === 0) {
       return;
     }
@@ -687,62 +778,45 @@ const EventDetailsOfRegionalManagerEvent = () => {
       setFiles(validFiles);
     } else {
       // Clear the input
-      e.target.value = '';
+      resetFileInput.current?.();
     }
   };
 
   const removeAttendee = async () => {
     if (!canMakeAction) return;
-    if (!removingAttendeeId) return;
-    if (attendeesRemoving.includes(removingAttendeeId)) {
+    if (!removingAttendee) return;
+    const attendeeId = removingAttendee._id;
+    if (attendeesRemoving.includes(attendeeId)) {
       toast.error('Attendee is already being removed');
       return;
     }
 
-    setAttendeesRemoving((prev) => [...prev, removingAttendeeId]);
+    setAttendeesRemoving((prev) => [...prev, attendeeId]);
 
     try {
-      // First delete from server
-      await new Promise((resolve, reject) => {
-        callServerAPI(
-          'POST',
-          '/post/attendees/delete',
-          {
-            data: {
-              event_id: event.id,
-              attendee_id: removingAttendeeId,
-            },
-          },
-          resolve,
-          reject,
-        );
-      });
-
-      // Then delete from local database
-      await new Promise((resolve, reject) => {
-        callApi(
-          'DELETE',
-          `/events/attendee?event_id=${event.id}&attendee_id=${removingAttendeeId}`,
-          null,
-          resolve,
-          reject,
-        );
-      });
-
-      toast.success('Attendee removed successfully');
-      setAttendeeList((prev) =>
-        prev.filter((attendee) => attendee.id !== removingAttendeeId),
+      // Not in Odoo yet: gone at once. In Odoo: listed as "removing" until
+      // Odoo confirms.
+      const response: { message?: string } = await new Promise(
+        (resolve, reject) => {
+          callApi(
+            'DELETE',
+            `/v2/events/${event._id}/attendees/${attendeeId}`,
+            null,
+            resolve,
+            reject,
+          );
+        },
       );
-      fetchEventDetails(false);
+
+      toast.success(response?.message || 'Attendee removed');
+      fetchEventDetails(true);
       setIsAttendeeRemoveDialogOpen(false);
-      setRemovingAttendeeId(null);
+      setRemovingAttendee(null);
     } catch (error) {
       console.error('Remove attendee error:', error);
-      toast.error('Failed to remove attendee');
+      toast.error(errorMessage(error, 'Failed to remove attendee'));
     } finally {
-      setAttendeesRemoving((prev) =>
-        prev.filter((id) => id !== removingAttendeeId),
-      );
+      setAttendeesRemoving((prev) => prev.filter((id) => id !== attendeeId));
     }
   };
 
@@ -753,37 +827,41 @@ const EventDetailsOfRegionalManagerEvent = () => {
   );
 
   return (
-    <div className="container mx-auto p-4 max-w-3xl">
+    <Container size="sm" px={0}>
       {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
+        <Group justify="center" h={256}>
+          <Loader />
+        </Group>
       ) : (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader className="flex flex-row justify-between items-center">
-              <CardTitle className="text-lg font-semibold">
-                Event Details #{event?.id}
-              </CardTitle>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon">
-                    <MoreVertical className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56">
+        <>
+          <PageHeader
+            title={<>Event Details {recordRef(event)}</>}
+            actions={
+              <Menu position="bottom-end" width={224} shadow="md">
+                <Menu.Target>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    size="lg"
+                    aria-label="Event actions"
+                  >
+                    <MoreVertical size={20} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {unsynced && <Menu.Label>{unsyncedHint}</Menu.Label>}
                   {!event?.event_stage?.name
                     ?.toLowerCase()
                     ?.includes('cancel') && (
-                    <DropdownMenuItem
+                    <Menu.Item
                       onClick={() => {
                         if (!canMakeAction) return;
                         setIsAddAttendeeOpen(true);
                       }}
                       disabled={
+                        unsynced ||
                         !canMakeAction ||
                         addAttendeeLoading ||
-                        attendeeLoading ||
                         event?.event_stage?.name
                           ?.toLowerCase()
                           ?.includes('cancel') ||
@@ -794,14 +872,15 @@ const EventDetailsOfRegionalManagerEvent = () => {
                       }
                     >
                       Add Attendees
-                    </DropdownMenuItem>
+                    </Menu.Item>
                   )}
                   {!event?.event_stage?.name
                     ?.toLowerCase()
                     ?.includes('cancel') && (
-                    <DropdownMenuItem
+                    <Menu.Item
                       onClick={fetchEventStagesList}
                       disabled={
+                        unsynced ||
                         updateStatusFetching ||
                         !canMakeAction ||
                         event?.event_stage?.name
@@ -816,9 +895,9 @@ const EventDetailsOfRegionalManagerEvent = () => {
                       {updateStatusFetching
                         ? 'Getting Event Stages...'
                         : 'Update Event Stage'}
-                    </DropdownMenuItem>
+                    </Menu.Item>
                   )}
-                  <DropdownMenuItem
+                  <Menu.Item
                     onClick={() => {
                       if (event?.rsmAttended) {
                         toast.error('Event is already marked as attended', {
@@ -840,6 +919,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
                       setIsMarkAttendedOpen(true);
                     }}
                     disabled={
+                      unsynced ||
                       event?.rsmAttended ||
                       event?.event_stage?.name
                         ?.toLowerCase()
@@ -855,8 +935,8 @@ const EventDetailsOfRegionalManagerEvent = () => {
                     }
                   >
                     {event?.rsmAttended ? 'Attended' : 'Mark as Attended'} Event
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
+                  </Menu.Item>
+                  <Menu.Item
                     onClick={() => {
                       if (event?.verified) {
                         toast.error('Event is already verified', {
@@ -878,6 +958,7 @@ const EventDetailsOfRegionalManagerEvent = () => {
                       setIsVerifyEventOpen(true);
                     }}
                     disabled={
+                      unsynced ||
                       event?.event_stage?.name
                         ?.toLowerCase()
                         ?.includes('cancel') ||
@@ -896,102 +977,100 @@ const EventDetailsOfRegionalManagerEvent = () => {
                         ? 'Verified'
                         : 'Verify'}{' '}
                     Event
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-sm font-semibold">Event Address</p>
-                <p className="text-sm">{event?.name}</p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Event Time</p>
-                <p className="text-sm">
-                  From {event?.date_begin} <br /> To {event?.date_end} 🕒
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Location</p>
-                <p className="text-sm">
-                  {event?.region?.name} - {event?.territory?.name}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Event Type</p>
-                <p className="text-sm">{event?.event_type?.name}</p>
-              </div>
-              {event?.crops?.length > 0 && (
-                <div>
-                  <p className="text-sm font-semibold">Crops</p>
-                  <p className="text-sm">
-                    {event?.crops?.map((item) => item.name).join(', ')}
-                  </p>
-                </div>
-              )}
-              {event?.dealers?.length > 0 && (
-                <div>
-                  <p className="text-sm font-semibold">Dealers</p>
-                  <p className="text-sm">
-                    {event?.dealers?.map((item) => item.name).join(', ')}
-                  </p>
-                </div>
-              )}
-              {event?.demo_products?.length > 0 && (
-                <div>
-                  <p className="text-sm font-semibold">Products</p>
-                  <p className="text-sm">
-                    {event?.demo_products?.map((item) => item.name).join(', ')}
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            }
+          />
 
-          {/* Event Images Section - Enhanced */}
-          {event?.images && event.images.length > 0 && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                    <Eye className="h-4 w-4 text-green-600" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg font-semibold">
-                      Event Images
-                    </CardTitle>
-                    <p className="text-sm text-gray-500">
+          <Stack gap="lg">
+            {isFailed(event) ? (
+              <Alert color="red" variant="light" title="Not sent to Odoo">
+                <FailedActions
+                  item={event}
+                  resource="/v2/events"
+                  onEdit={() =>
+                    navigate('/add-rm-event', { state: { record: event } })
+                  }
+                  // Resent: show it queued. Discarded: it is gone, go back.
+                  onChanged={() => fetchEventDetails(true, () => navigate(-1))}
+                />
+              </Alert>
+            ) : unsynced ? (
+              <Alert color="blue" variant="light">
+                Being sent to Odoo… Actions are available once it is there.
+              </Alert>
+            ) : (
+              <RefusedChanges
+                eventId={event._id}
+                actions={failedActions}
+                onChanged={refreshAfterAction}
+              />
+            )}
+            <Paper withBorder shadow="sm" p="lg">
+              <Stack gap="md">
+                <Field label="Event Address">{event?.name}</Field>
+                <Field label="Event Time">
+                  From {event?.date_begin} <br /> To {event?.date_end} 🕒
+                </Field>
+                <Field label="Location">
+                  {event?.region?.name} - {event?.territory?.name}
+                </Field>
+                <Field label="Event Type">{event?.event_type?.name}</Field>
+                {event?.crops?.length > 0 && (
+                  <Field label="Crops">
+                    {event?.crops?.map((item) => item.name).join(', ')}
+                  </Field>
+                )}
+                {event?.dealers?.length > 0 && (
+                  <Field label="Dealers">
+                    {event?.dealers?.map((item) => item.name).join(', ')}
+                  </Field>
+                )}
+                {event?.demo_products?.length > 0 && (
+                  <Field label="Products">
+                    {event?.demo_products?.map((item) => item.name).join(', ')}
+                  </Field>
+                )}
+              </Stack>
+            </Paper>
+
+            {/* Event Images Section */}
+            {event?.images && event.images.length > 0 && (
+              <Paper withBorder shadow="sm" p="lg">
+                <Group gap="sm" mb="md" wrap="nowrap">
+                  <ThemeIcon
+                    variant="light"
+                    color="green"
+                    radius="xl"
+                    size="lg"
+                  >
+                    <Eye size={16} />
+                  </ThemeIcon>
+                  <Box>
+                    <Title order={4}>Event Images</Title>
+                    <Text size="sm" c="dimmed">
                       {event.images.length} image
                       {event.images.length !== 1 ? 's' : ''} uploaded
-                    </p>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    </Text>
+                  </Box>
+                </Group>
+                <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="md">
                   {event.images.map((imageUrl, index) => (
-                    <div key={index} className="relative group">
-                      <div className="aspect-square overflow-hidden rounded-lg border-2 border-gray-200 hover:border-blue-300 transition-colors">
-                        <img
+                    <Box key={index} pos="relative">
+                      <AspectRatio ratio={1}>
+                        <Image
                           src={imageUrl}
                           alt={`Event image ${index + 1}`}
-                          className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-200"
+                          fit="cover"
+                          radius="md"
+                          style={{ cursor: 'pointer' }}
                           onClick={() => setSelectedEventImage(imageUrl)}
                           onError={(e) => {
                             e.currentTarget.style.display = 'none';
                           }}
                         />
-                      </div>
-
-                      {/* View overlay */}
-                      <div
-                        className="absolute inset-0 rounded-lg flex items-center justify-center opacity-0 g"
-                        onClick={() => setSelectedEventImage(imageUrl)}
-                      >
-                        <div className="bg-white rounded-full p-2 shadow-md">
-                          <Eye className="text-blue-600 h-5 w-5" />
-                        </div>
-                      </div>
+                      </AspectRatio>
 
                       {/* Delete button */}
                       {canMakeAction &&
@@ -999,543 +1078,506 @@ const EventDetailsOfRegionalManagerEvent = () => {
                           ?.toLowerCase()
                           ?.includes('cancel') &&
                         !event?.verified && (
-                          <Button
-                            variant="destructive"
-                            size="icon"
-                            className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                          <ActionIcon
+                            color="red"
+                            variant="filled"
+                            size="md"
+                            pos="absolute"
+                            top={8}
+                            right={8}
+                            aria-label="Remove image"
                             onClick={(e) => {
                               e.stopPropagation();
                               deleteEventImage(imageUrl);
                             }}
-                            disabled={eventImagesRemoving.includes(imageUrl)}
+                            loading={eventImagesRemoving.includes(imageUrl)}
                           >
-                            {eventImagesRemoving.includes(imageUrl) ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-3 w-3" />
-                            )}
-                          </Button>
+                            <Trash2 size={14} />
+                          </ActionIcon>
                         )}
-                    </div>
+                    </Box>
                   ))}
-                </div>
-                <div className="mt-4 text-center">
-                  <p className="text-xs text-gray-500">
-                    💡 Click on any image to view it in full size
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                </SimpleGrid>
+                <Text size="xs" c="dimmed" ta="center" mt="md">
+                  💡 Click on any image to view it in full size
+                </Text>
+              </Paper>
+            )}
 
-          {/* Image Upload Card - Enhanced to match mobile UX */}
-          {canMakeAction &&
-            !event?.event_stage?.name?.toLowerCase()?.includes('cancel') &&
-            !event?.verified && (
-              <Card className="border-2 border-dashed border-blue-300 hover:border-blue-400 transition-colors">
-                <CardHeader className="text-center pb-3">
-                  <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-3">
-                    <Upload className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <CardTitle className="text-lg font-semibold text-blue-700">
-                    Upload Event Images
-                  </CardTitle>
-                  <p className="text-sm text-gray-500">
-                    Add photos to document your event
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex flex-col gap-4">
-                      <div className="relative">
-                        <Input
-                          type="file"
-                          multiple
-                          accept="image/*"
-                          onChange={handleFileChange}
-                          className="w-full cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                          disabled={removeLoading}
-                        />
-                      </div>
-
-                      {files.length > 0 && (
-                        <div className=" rounded-lg p-4">
-                          <h4 className="text-sm font-medium text-gray-700 mb-2">
-                            Selected Files ({files.length}/5):
-                          </h4>
-                          <div className="space-y-1 max-h-32 overflow-y-auto">
-                            {files.map((file, index) => (
-                              <div
-                                key={index}
-                                className="flex items-center justify-between text-sm"
-                              >
-                                <span className="text-gray-600 truncate flex-1 mr-2">
-                                  {file.name}
-                                </span>
-                                <span className="text-xs text-gray-400">
-                                  {(file.size / 1024 / 1024).toFixed(1)}MB
-                                </span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="ml-2 h-6 w-6 p-0"
-                                  onClick={() => {
-                                    setFiles((prev) =>
-                                      prev.filter((_, i) => i !== index),
-                                    );
-                                  }}
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <Button
-                        onClick={uploadFilesToEvent}
-                        disabled={files.length === 0 || removeLoading}
-                        className="w-full bg-blue-600 hover:bg-blue-700"
-                        size="lg"
+            {/* Image Upload Card */}
+            {canMakeAction &&
+              !event?.event_stage?.name?.toLowerCase()?.includes('cancel') &&
+              !event?.verified && (
+                <Paper
+                  withBorder
+                  shadow="sm"
+                  p="lg"
+                  style={{ borderStyle: 'dashed' }}
+                >
+                  <Stack gap="md">
+                    <Stack align="center" gap={4}>
+                      <ThemeIcon
+                        variant="light"
+                        color="blue"
+                        radius="xl"
+                        size={48}
+                        mb="xs"
                       >
-                        {removeLoading ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            Uploading {files.length} image
-                            {files.length !== 1 ? 's' : ''}...
-                          </>
+                        <Upload size={24} />
+                      </ThemeIcon>
+                      <Title order={4} ta="center">
+                        Upload Event Images
+                      </Title>
+                      <Text size="sm" c="dimmed" ta="center">
+                        Add photos to document your event
+                      </Text>
+                    </Stack>
+
+                    <FileButton
+                      resetRef={resetFileInput}
+                      onChange={handleFileChange}
+                      accept="image/*"
+                      multiple
+                      disabled={removeLoading || unsynced}
+                    >
+                      {(props) => (
+                        <Button
+                          {...props}
+                          variant="default"
+                          fullWidth
+                          disabled={removeLoading || unsynced}
+                        >
+                          Choose Files
+                        </Button>
+                      )}
+                    </FileButton>
+
+                    {files.length > 0 && (
+                      <Box>
+                        <Text size="sm" fw={500} mb="xs">
+                          Selected Files ({files.length}/5):
+                        </Text>
+                        <Stack gap={4} mah={128} style={{ overflowY: 'auto' }}>
+                          {files.map((file, index) => (
+                            <Group key={index} gap="xs" wrap="nowrap">
+                              <Text size="sm" c="dimmed" truncate flex={1}>
+                                {file.name}
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                {(file.size / 1024 / 1024).toFixed(1)}MB
+                              </Text>
+                              <ActionIcon
+                                variant="subtle"
+                                color="gray"
+                                size="sm"
+                                aria-label="Remove file"
+                                onClick={() => {
+                                  setFiles((prev) =>
+                                    prev.filter((_, i) => i !== index),
+                                  );
+                                }}
+                              >
+                                <X size={12} />
+                              </ActionIcon>
+                            </Group>
+                          ))}
+                        </Stack>
+                      </Box>
+                    )}
+
+                    <Button
+                      onClick={uploadFilesToEvent}
+                      disabled={files.length === 0 || removeLoading || unsynced}
+                      fullWidth
+                      size="md"
+                      leftSection={
+                        removeLoading ? (
+                          <Loader size={16} color="gray" />
                         ) : (
-                          <>
-                            <Upload className="h-4 w-4 mr-2" />
-                            Upload {files.length > 0 ? `${files.length} ` : ''}
-                            Image{files.length !== 1 ? 's' : ''}
-                          </>
-                        )}
-                      </Button>
-                    </div>
+                          <Upload size={16} />
+                        )
+                      }
+                    >
+                      {removeLoading ? (
+                        <>
+                          Uploading {files.length} image
+                          {files.length !== 1 ? 's' : ''}...
+                        </>
+                      ) : (
+                        <>
+                          Upload {files.length > 0 ? `${files.length} ` : ''}
+                          Image{files.length !== 1 ? 's' : ''}
+                        </>
+                      )}
+                    </Button>
 
-                    <div className="text-center">
-                      <p className="text-xs text-gray-500">
+                    <Box>
+                      {unsynced && (
+                        <Text size="xs" c="dimmed" ta="center" mb={4}>
+                          {unsyncedHint}
+                        </Text>
+                      )}
+                      <Text size="xs" c="dimmed" ta="center">
                         📸 You can upload up to 5 images at once
-                      </p>
-                      <p className="text-xs text-gray-500">
+                      </Text>
+                      <Text size="xs" c="dimmed" ta="center">
                         💾 Maximum file size: 5MB per image
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
+                      </Text>
+                      <Text size="xs" c="dimmed" ta="center" mt={4}>
                         Supported formats: JPG, PNG, GIF, WebP
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                      </Text>
+                    </Box>
+                  </Stack>
+                </Paper>
+              )}
 
-          {/* Empty State for Event Images */}
-          {(!event?.images || event.images.length === 0) &&
-            canMakeAction &&
-            !event?.event_stage?.name?.toLowerCase()?.includes('cancel') &&
-            !event?.verified && (
-              <Card className="border-dashed border-2 border-gray-300">
-                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="w-16 h-16  rounded-full flex items-center justify-center mb-4">
-                    <Eye className="h-8 w-8 text-gray-400" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">
-                    No event images yet
-                  </h3>
-                  <p className="text-sm text-gray-500 mb-4 max-w-sm">
-                    📸 Document your event by uploading photos below. Images
-                    help tell the story of your event!
-                  </p>
-                  <div className="flex items-center gap-2 text-xs text-gray-400">
-                    <span>💡 Tip: Upload images as the event progresses</span>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            {/* Empty State for Event Images */}
+            {(!event?.images || event.images.length === 0) &&
+              canMakeAction &&
+              !event?.event_stage?.name?.toLowerCase()?.includes('cancel') &&
+              !event?.verified && (
+                <Paper withBorder p="lg" style={{ borderStyle: 'dashed' }}>
+                  <EmptyState
+                    icon={<Eye size={32} />}
+                    title="No event images yet"
+                    description="📸 Document your event by uploading photos below. Images help tell the story of your event!"
+                    action={
+                      <Text size="xs" c="dimmed" ta="center">
+                        💡 Tip: Upload images as the event progresses
+                      </Text>
+                    }
+                  />
+                </Paper>
+              )}
 
-          {attendeeList.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold">
+            {attendeeList.length > 0 && (
+              <Paper withBorder shadow="sm" p="lg">
+                <Title order={4} mb="md">
                   Attendees
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {attendeeLoading ? (
-                  <div className="flex justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  </div>
-                ) : attendeeList.length === 0 ? (
-                  <p className="text-center text-sm text-gray-500">
-                    No attendees found
-                  </p>
-                ) : (
-                  attendeeList.map((item, index) => {
+                </Title>
+                <Stack gap="md">
+                  {attendeeList.map((item, index) => {
                     // Check farmer_verify instead of attended_event_ids for "Farmer Host" tag
                     const isFarmerHost = item.farmer_verify;
-                    const isRemoving = attendeesRemoving.includes(item.id);
+                    const isRemoving = attendeesRemoving.includes(item._id);
+                    // Odoo is still removing this attendee.
+                    const beingRemoved = item.status === 'removing';
                     return (
-                      <Card key={index} className="w-full">
-                        <CardContent className="p-4 space-y-2">
-                          <div className="flex justify-between items-center">
-                            <p className="text-sm font-semibold flex-1">
-                              {index + 1}. {item.name}
-                            </p>
-                            <div className="flex items-center gap-2">
-                              {isFarmerHost && (
-                                <span
-                                  className={`text-xs px-2 py-1 rounded ${statusStyles.sent}`}
-                                >
-                                  Farmer Host
-                                </span>
-                              )}
-                              {canMakeAction && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => {
-                                    setRemovingAttendeeId(item.id);
-                                    setIsAttendeeRemoveDialogOpen(true);
-                                  }}
-                                  disabled={isRemoving}
-                                >
-                                  {isRemoving ? (
-                                    <Loader2 className="h-4 w-4 animate-spin text-red-600" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4 text-red-600" />
-                                  )}
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-sm">Phone No: {item.phone_no}</p>
-                          <p className="text-sm">
-                            Land Area: {item.land_area} Acre
-                          </p>
-                        </CardContent>
+                      <Card key={item._id} withBorder padding="md">
+                        <Group
+                          justify="space-between"
+                          wrap="nowrap"
+                          align="center"
+                        >
+                          <Text size="sm" fw={600} flex={1}>
+                            {index + 1}. {item.name}
+                          </Text>
+                          <Group gap="xs" wrap="nowrap">
+                            {(isUnsynced(item) || beingRemoved) && (
+                              <StatusBadge status={item.status} size="sm" />
+                            )}
+                            {isFarmerHost && (
+                              <Badge
+                                color="green"
+                                variant="light"
+                                size="sm"
+                                tt="capitalize"
+                              >
+                                Farmer Host
+                              </Badge>
+                            )}
+                            {canMakeAction && (
+                              <ActionIcon
+                                variant="subtle"
+                                color="red"
+                                aria-label="Remove attendee"
+                                onClick={() => {
+                                  setRemovingAttendee(item);
+                                  setIsAttendeeRemoveDialogOpen(true);
+                                }}
+                                loading={isRemoving}
+                                disabled={beingRemoved || unsynced}
+                              >
+                                <Trash2 size={16} />
+                              </ActionIcon>
+                            )}
+                          </Group>
+                        </Group>
+                        <Text size="sm" mt="xs">
+                          Phone No: {item.phone_no}
+                        </Text>
+                        <Text size="sm">Land Area: {item.land_area} Acre</Text>
+                        {isFailed(item) && (
+                          <Group gap="xs" mt="xs" wrap="nowrap">
+                            <Text size="xs" c="red" flex={1}>
+                              {item.syncError || 'Could not be sent to Odoo.'}
+                            </Text>
+                            <Button
+                              size="compact-xs"
+                              variant="default"
+                              leftSection={<RotateCw size={12} />}
+                              onClick={() => resendAttendee(item)}
+                              loading={attendeesResending.includes(item._id)}
+                              disabled={unsynced}
+                            >
+                              Resend
+                            </Button>
+                            <Button
+                              size="compact-xs"
+                              variant="light"
+                              leftSection={<Pencil size={12} />}
+                              onClick={() => openAttendeeEdit(item)}
+                              disabled={
+                                unsynced ||
+                                attendeesResending.includes(item._id)
+                              }
+                            >
+                              Edit
+                            </Button>
+                          </Group>
+                        )}
                       </Card>
                     );
-                  })
-                )}
-              </CardContent>
-            </Card>
-          )}
+                  })}
+                </Stack>
+              </Paper>
+            )}
 
-          {eventExpenses.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold">
+            {eventExpenses.length > 0 && (
+              <Paper withBorder shadow="sm" p="lg">
+                <Title order={4} mb="md">
                   Expenses
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {eventExpenses.map((item, index) => (
-                  <ExpensesCard
-                    key={index}
-                    item={item}
-                    toggleExpenseImages={toggleExpenseImages}
-                    setToggleExpenseImages={setToggleExpenseImages}
-                  />
-                ))}
-              </CardContent>
-            </Card>
-          )}
+                </Title>
+                <Stack gap="md">
+                  {eventExpenses.map((item) => (
+                    <ExpensesCard
+                      key={item._id}
+                      item={item}
+                      toggleExpenseImages={toggleExpenseImages}
+                      setToggleExpenseImages={setToggleExpenseImages}
+                    />
+                  ))}
+                </Stack>
+              </Paper>
+            )}
 
-          <p className="text-xs text-gray-500 text-center mt-4">
-            Actions can only be performed at least four days after the event's
-            end date, and the event has not been cancelled.
-          </p>
-        </div>
+            <Text size="xs" c="dimmed" ta="center">
+              Actions can only be performed at least four days after the event's
+              end date, and the event has not been cancelled.
+            </Text>
+          </Stack>
+        </>
       )}
 
-      <Dialog open={isAddAttendeeOpen} onOpenChange={setIsAddAttendeeOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Attendees</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="phone_no">Phone No</Label>
-              <Input
-                id="phone_no"
-                placeholder="Enter phone no"
-                value={attendee?.phone_no}
-                onChange={(e) => handlePhoneNumberChange(e.target.value)}
-                type="tel"
-              />
-              {attendeesSearchResult.length > 0 && (
-                <div className="mt-2 border rounded-md max-h-40 overflow-y-auto">
-                  {attendeesSearchResult.map((item, index) => (
-                    <div
-                      key={index}
-                      className="p-2 hover: cursor-pointer"
-                      onClick={() => {
-                        setAttendee({
-                          name: item.name,
-                          phone_no: item.phone_no,
-                          land_area: item.land_area.toString(),
-                          farmer_verify: false,
-                        });
-                        setAttendeesSearchResult([]);
-                      }}
-                    >
-                      <p className="text-sm">
-                        {item.name.length > 20
-                          ? item.name.slice(0, 20) + '...'
-                          : item.name}
-                      </p>
-                      <p className="text-sm text-gray-500">{item.phone_no}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                placeholder="Enter name"
-                value={attendee?.name}
-                onChange={(e) =>
-                  setAttendee((prev) => ({ ...prev, name: e.target.value }))
+      <Modal
+        opened={isAddAttendeeOpen}
+        onClose={closeAttendeeDialog}
+        title={
+          <Text fw={600}>
+            {editingAttendee ? 'Edit Attendee' : 'Add Attendees'}
+          </Text>
+        }
+      >
+        <Stack gap="md">
+          <Box>
+            <TextInput
+              label="Phone No"
+              placeholder="Enter phone no"
+              value={attendee?.phone_no}
+              onChange={(e) => handlePhoneNumberChange(e.currentTarget.value)}
+              type="tel"
+              error={attendeeFieldError('phone_no')}
+            />
+            {attendeesSearchResult.length > 0 && (
+              <Paper
+                withBorder
+                radius="md"
+                mt="xs"
+                mah={160}
+                style={{ overflowY: 'auto' }}
+              >
+                {attendeesSearchResult.map((item, index) => (
+                  <UnstyledButton
+                    key={index}
+                    w="100%"
+                    p="xs"
+                    onClick={() => {
+                      setAttendee({
+                        name: item.name,
+                        phone_no: item.phone_no,
+                        land_area: item.land_area.toString(),
+                        farmer_verify: false,
+                      });
+                      setAttendeesSearchResult([]);
+                    }}
+                  >
+                    <Text size="sm">
+                      {item.name.length > 20
+                        ? item.name.slice(0, 20) + '...'
+                        : item.name}
+                    </Text>
+                    <Text size="sm" c="dimmed">
+                      {item.phone_no}
+                    </Text>
+                  </UnstyledButton>
+                ))}
+              </Paper>
+            )}
+          </Box>
+          <TextInput
+            label="Name"
+            placeholder="Enter name"
+            value={attendee?.name}
+            error={attendeeFieldError('name')}
+            onChange={(e) => {
+              const value = e.currentTarget.value;
+              setAttendee((prev) => ({ ...prev, name: value }));
+            }}
+          />
+          <TextInput
+            label="Land Area"
+            placeholder="Enter land area"
+            value={attendee?.land_area}
+            error={attendeeFieldError('land_area')}
+            onChange={(e) => {
+              const value = e.currentTarget.value;
+              setAttendee((prev) => ({
+                ...prev,
+                land_area: value.replace(/[^0-9.]/g, ''),
+              }));
+            }}
+            type="text"
+          />
+
+          {/* Host Farmer Checkbox */}
+          <Checkbox
+            label="Host Farmer"
+            checked={attendee.farmer_verify}
+            onChange={(e) => {
+              const checked = e.currentTarget.checked;
+              setAttendee((prev) => ({
+                ...prev,
+                farmer_verify: checked,
+              }));
+            }}
+          />
+          <Button onClick={handleAddAttendee} loading={addAttendeeLoading}>
+            {editingAttendee ? 'Save & Resend' : 'Add Attendee'}
+          </Button>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={isUpdateStageOpen}
+        onClose={() => setIsUpdateStageOpen(false)}
+        title={<Text fw={600}>Update Event Stage</Text>}
+      >
+        <Stack gap="xs">
+          {eventStageList.map((item, index) => (
+            <UnstyledButton
+              key={index}
+              w="100%"
+              onClick={() => {
+                if (
+                  event?.verified &&
+                  item.name.toLowerCase().includes('cancel')
+                ) {
+                  toast.error('You cannot cancel a verified event', {
+                    description: 'Error',
+                  });
+                  return;
                 }
-              />
-            </div>
-            <div>
-              <Label htmlFor="land_area">Land Area</Label>
-              <Input
-                id="land_area"
-                placeholder="Enter land area"
-                value={attendee?.land_area}
-                onChange={(e) =>
-                  setAttendee((prev) => ({
-                    ...prev,
-                    land_area: e.target.value.replace(/[^0-9.]/g, ''),
-                  }))
-                }
-                type="text"
-              />
-            </div>
+                onStageChange(item.id);
+              }}
+            >
+              <Paper withBorder radius="md" p="sm">
+                <Group justify="space-between" wrap="nowrap">
+                  <Text size="sm">{item.name}</Text>
+                  {updatingEventStageId === item.id ? (
+                    <Loader size={20} />
+                  ) : item.id === event.event_stage_id ? (
+                    <CheckCheck size={20} color="var(--mantine-color-blue-6)" />
+                  ) : null}
+                </Group>
+              </Paper>
+            </UnstyledButton>
+          ))}
+        </Stack>
+      </Modal>
 
-            {/* Host Farmer Checkbox */}
-            <div className="flex items-center space-x-2 p-4  rounded-lg">
-              <input
-                id="farmer_verify"
-                type="checkbox"
-                checked={attendee.farmer_verify}
-                onChange={(e) =>
-                  setAttendee((prev) => ({
-                    ...prev,
-                    farmer_verify: e.target.checked,
-                  }))
-                }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <Label
-                htmlFor="farmer_verify"
-                className="text-sm font-medium text-gray-700 cursor-pointer"
-              >
-                Host Farmer
-              </Label>
-            </div>
-            <Button onClick={handleAddAttendee} disabled={addAttendeeLoading}>
-              {addAttendeeLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : null}
-              Add Attendee
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmModal
+        opened={isVerifyEventOpen}
+        onClose={() => setIsVerifyEventOpen(false)}
+        onConfirm={onConfirmEvent}
+        title="Verify Event"
+        confirmLabel="Yes"
+        cancelLabel="No"
+        loading={verifyEventLoading}
+        color={theme.primaryColor}
+      >
+        Are you sure you want to mark this event as verified?
+      </ConfirmModal>
 
-      <Dialog open={isUpdateStageOpen} onOpenChange={setIsUpdateStageOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Update Event Stage</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            {eventStageList.map((item, index) => (
-              <div
-                key={index}
-                className="flex justify-between items-center p-3 border rounded-md cursor-pointer"
-                onClick={() => {
-                  if (
-                    event?.verified &&
-                    item.name.toLowerCase().includes('cancel')
-                  ) {
-                    toast.error('You cannot cancel a verified event', {
-                      description: 'Error',
-                    });
-                    return;
-                  }
-                  onStageChange(item.id);
-                }}
-              >
-                <p className="text-sm">{item.name}</p>
-                {updatingEventStageId === item.id ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : item.id === event.event_stage_id ? (
-                  <CheckCheck className="h-5 w-5 text-blue-600" />
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmModal
+        opened={isMarkAttendedOpen}
+        onClose={() => setIsMarkAttendedOpen(false)}
+        onConfirm={onConfirmEventAttended}
+        title="Mark Event as Attended"
+        confirmLabel="Yes"
+        cancelLabel="No"
+        loading={rsmAttendedLoading}
+        color={theme.primaryColor}
+      >
+        Are you sure you want to mark this event as attended?
+      </ConfirmModal>
 
-      <Dialog open={isVerifyEventOpen} onOpenChange={setIsVerifyEventOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Verify Event</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            <p className="text-sm">
-              Are you sure you want to mark this event as verified?
-            </p>
-            <div className="flex gap-2">
-              <Button onClick={onConfirmEvent} disabled={verifyEventLoading}>
-                {verifyEventLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
-                Yes
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => setIsVerifyEventOpen(false)}
-                disabled={verifyEventLoading}
-              >
-                No
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isMarkAttendedOpen} onOpenChange={setIsMarkAttendedOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Mark Event as Attended</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            <p className="text-sm">
-              Are you sure you want to mark this event as attended?
-            </p>
-            <div className="flex gap-2">
-              <Button
-                onClick={onConfirmEventAttended}
-                disabled={rsmAttendedLoading}
-              >
-                {rsmAttendedLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
-                Yes
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => setIsMarkAttendedOpen(false)}
-                disabled={rsmAttendedLoading}
-              >
-                No
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Enhanced Event Image Modal */}
+      {/* Event Image Modal */}
       {selectedEventImage && (
-        <Dialog
-          open={!!selectedEventImage}
-          onOpenChange={() => setSelectedEventImage(null)}
+        <Modal
+          opened
+          onClose={() => setSelectedEventImage(null)}
+          size="xl"
+          padding="xs"
         >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-2 bg-black bg-opacity-90">
-            <div className="relative flex items-center justify-center min-h-[400px]">
-              <img
-                src={selectedEventImage}
-                alt="Event Image"
-                className="max-w-full max-h-[85vh] object-contain rounded-lg"
-                onError={() => {
-                  toast.error('Failed to load image');
-                  setSelectedEventImage(null);
-                }}
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                className="absolute top-4 right-4 bg-white hover:"
-                onClick={() => setSelectedEventImage(null)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
-              <div className="bg-white bg-opacity-80 rounded-full px-4 py-2">
-                <p className="text-sm text-gray-800">
-                  Event Image ({event?.images?.indexOf(selectedEventImage) + 1}{' '}
-                  of {event?.images?.length})
-                </p>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+          <Image
+            src={selectedEventImage}
+            alt="Event Image"
+            mah="85vh"
+            fit="contain"
+            radius="md"
+            onError={() => {
+              toast.error('Failed to load image');
+              setSelectedEventImage(null);
+            }}
+          />
+          <Text size="sm" c="dimmed" ta="center" mt="xs">
+            Event Image ({event?.images?.indexOf(selectedEventImage) + 1} of{' '}
+            {event?.images?.length})
+          </Text>
+        </Modal>
       )}
 
       {/* Attendee Remove Confirmation Dialog */}
-      <Dialog
-        open={isAttendeeRemoveDialogOpen}
-        onOpenChange={setIsAttendeeRemoveDialogOpen}
+      <ConfirmModal
+        opened={isAttendeeRemoveDialogOpen}
+        onClose={() => {
+          setIsAttendeeRemoveDialogOpen(false);
+          setRemovingAttendee(null);
+        }}
+        onConfirm={removeAttendee}
+        title="Remove Attendee"
+        confirmLabel="Yes"
+        cancelLabel="No"
+        loading={
+          removingAttendee
+            ? attendeesRemoving.includes(removingAttendee._id)
+            : false
+        }
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove Attendee</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Are you sure you want to remove this attendee #
-              {removingAttendeeId}?
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsAttendeeRemoveDialogOpen(false);
-                  setRemovingAttendeeId(null);
-                }}
-                disabled={
-                  removingAttendeeId
-                    ? attendeesRemoving.includes(removingAttendeeId)
-                    : false
-                }
-              >
-                No
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={removeAttendee}
-                disabled={
-                  removingAttendeeId
-                    ? attendeesRemoving.includes(removingAttendeeId)
-                    : false
-                }
-              >
-                {removingAttendeeId &&
-                attendeesRemoving.includes(removingAttendeeId) ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Removing...
-                  </>
-                ) : (
-                  'Yes'
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+        Are you sure you want to remove this attendee{' '}
+        {removingAttendee ? recordRef(removingAttendee) : ''}?
+      </ConfirmModal>
+    </Container>
   );
 };
 

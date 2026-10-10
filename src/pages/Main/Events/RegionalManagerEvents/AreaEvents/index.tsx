@@ -1,36 +1,33 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
+  ActionIcon,
+  Badge,
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Container,
+  Group,
+  Image,
+  Loader,
+  Modal,
+  Paper,
+  Stack,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core';
+import { toast } from '@/lib/toast';
 import dayjs from 'dayjs';
 import { callApi } from '@/api';
+import { isUnsynced, recordRef, useQueuedRefresh } from '@/api/v2';
 import { resetProducts } from '@/redux/slices/OrderCreationSlice';
 import {
   Filter,
   ChevronLeft,
-  Loader2,
   CheckCircle2,
   XCircle,
   Users,
@@ -38,42 +35,17 @@ import {
   Calendar,
   Image as ImageIcon,
   Hash,
-  Eye,
+  Search,
 } from 'lucide-react';
-import { DateFilter } from '@/components/DateFilter';
-import type { DateRange } from 'react-day-picker';
-
-const statusStyles = {
-  sent: 'bg-green-100 text-green-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  canceled: 'bg-red-100 text-red-800',
-  quotation: 'bg-blue-100 text-blue-800',
-  approved: 'bg-green-100 text-green-800',
-  draft: 'bg-red-100 text-red-800',
-  confirmed: 'bg-green-100 text-green-800',
-  approval: 'bg-yellow-100 text-yellow-800',
-  approve: 'bg-green-100 text-green-800',
-  submit: 'bg-green-100 text-green-800',
-  'to report': 'bg-yellow-100 text-yellow-800',
-  submitted: 'bg-blue-100 text-blue-800',
-  done: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  refuse: 'bg-red-100 text-red-800',
-  refused: 'bg-red-100 text-red-800',
-  cancelled: 'bg-red-100 text-red-800',
-  announced: 'bg-green-100 text-green-800',
-  new: 'bg-yellow-100 text-yellow-800',
-  completed: 'bg-green-100 text-green-800',
-  closed: 'bg-red-100 text-red-800',
-  'in progress': 'bg-yellow-100 text-yellow-800',
-  'in review': 'bg-yellow-100 text-yellow-800',
-  'in process': 'bg-yellow-100 text-yellow-800',
-  'in preparation': 'bg-yellow-100 text-yellow-800',
-  'in transit': 'bg-yellow-100 text-yellow-800',
-};
+import { DateFilter, type DateRange } from '@/components/DateFilter';
+import { EmptyState, StatusBadge } from '@/components/app';
 
 interface EventItem {
-  id: number;
+  _id: string;
+  // Odoo id; empty until the event has been sent.
+  id?: number;
+  jobId?: string;
+  status?: string;
   name: string;
   region: { name: string };
   territory: { name: string };
@@ -88,24 +60,72 @@ interface EventItem {
   images?: string[];
 }
 
+const EventBadges = ({
+  item,
+  size,
+}: {
+  item: EventItem;
+  size?: 'xs' | 'sm';
+}) => (
+  <>
+    {/* An event that is not in Odoo yet has no stage; show where it is. */}
+    {isUnsynced(item) ? (
+      <StatusBadge status={item.status} size={size} />
+    ) : (
+      <StatusBadge status={item?.event_stage?.name} size={size} />
+    )}
+    <StatusBadge
+      status={item?.verified ? 'Verified' : 'Unverified'}
+      size={size}
+      leftSection={
+        item?.verified ? <CheckCircle2 size={12} /> : <XCircle size={12} />
+      }
+    />
+    {item?.rsmAttended && (
+      <Badge
+        color="green"
+        variant="light"
+        tt="capitalize"
+        w="fit-content"
+        size={size}
+        leftSection={<Users size={12} />}
+      >
+        Attended
+      </Badge>
+    )}
+  </>
+);
+
+const ImagePreviewModal = ({
+  src,
+  onClose,
+}: {
+  src: string;
+  onClose: () => void;
+}) => (
+  <Modal opened onClose={onClose} size="xl" padding="xs">
+    <Image src={src} alt="Event Image" mah="85vh" fit="contain" radius="md" />
+  </Modal>
+);
+
 const EventsCard = ({
   item,
   toggleEventImages,
   setToggleEventImages,
 }: {
   item: EventItem;
-  toggleEventImages: number[];
-  setToggleEventImages: React.Dispatch<React.SetStateAction<number[]>>;
+  toggleEventImages: string[];
+  setToggleEventImages: React.Dispatch<React.SetStateAction<string[]>>;
 }) => {
   const navigate = useNavigate();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const toggleImages = () => {
     setToggleEventImages((prev) => {
-      if (prev.includes(item.id)) {
-        return prev.filter((id) => id !== item.id);
+      if (prev.includes(item._id)) {
+        return prev.filter((id) => id !== item._id);
       } else {
-        return [...prev, item.id];
+        return [...prev, item._id];
       }
     });
   };
@@ -113,135 +133,109 @@ const EventsCard = ({
   return (
     <>
       <Card
-        className="w-full cursor-pointer hover:shadow-md transition-shadow md:hidden"
-        onClick={() => navigate(`/event-details-area/${item.id}`)}
+        withBorder
+        padding="md"
+        style={{ cursor: 'pointer' }}
+        onClick={() => navigate(`/event-details-area/${item._id}`)}
       >
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle className="text-lg font-semibold flex-1">
-              #{item?.id} - {item?.name}
-            </CardTitle>
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <span
-                  className={`text-xs px-2 py-1 rounded ${
-                    statusStyles[item?.event_stage?.name.toLowerCase()]
-                  }`}
-                >
-                  {item?.event_stage?.name}
-                </span>
-                <span
-                  className={`text-xs px-2 py-1 rounded ${
-                    statusStyles[item?.verified ? 'sent' : 'cancelled']
-                  }`}
-                >
-                  {item?.verified ? 'Verified' : 'Unverified'}
-                </span>
-              </div>
-              {item?.rsmAttended && (
-                <span
-                  className={`text-xs px-2 py-1 rounded ${statusStyles.sent}`}
-                >
-                  Attended
-                </span>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <p className="text-sm text-gray-600">
-              {item?.region?.name} - {item?.territory?.name}
-            </p>
-            <p className="text-sm">
-              <span className="font-medium">Products: </span>
+        <Stack gap="sm">
+          <Group justify="space-between" align="flex-start" wrap="nowrap">
+            <Text fw={600} flex={1}>
+              {recordRef(item)} - {item?.name}
+            </Text>
+            <Stack gap={4} align="flex-end">
+              <EventBadges item={item} size="sm" />
+            </Stack>
+          </Group>
+
+          <Stack gap={6}>
+            <Group gap="xs" c="dimmed" wrap="nowrap">
+              <MapPin size={16} style={{ flexShrink: 0 }} />
+              <Text size="sm">
+                {item?.region?.name} - {item?.territory?.name}
+              </Text>
+            </Group>
+            <Text size="sm">
+              <Text span fw={500}>
+                Products:{' '}
+              </Text>
               {item?.demo_products?.map((product) => product.name).join(', ')}
-            </p>
-            <p className="text-sm">
-              <span className="font-medium">Crop: </span>
+            </Text>
+            <Text size="sm">
+              <Text span fw={500}>
+                Crop:{' '}
+              </Text>
               {item?.crops?.map((crop) => crop.name).join(', ')}
-            </p>
-            <p className="text-sm">
-              <span className="font-medium">Event Type: </span>
+            </Text>
+            <Text size="sm">
+              <Text span fw={500}>
+                Event Type:{' '}
+              </Text>
               {item?.event_type?.name}
-            </p>
-            <p className="text-sm text-gray-600">
-              {item?.date_begin} - {item?.date_end} 🕒
-            </p>
-          </div>
-        </CardContent>
+            </Text>
+            <Group gap="xs" c="dimmed" wrap="nowrap">
+              <Calendar size={16} style={{ flexShrink: 0 }} />
+              <Text size="sm">
+                {item?.date_begin} - {item?.date_end} 🕒
+              </Text>
+            </Group>
+          </Stack>
 
-        {/* Image Toggle Button */}
-        {item?.images && item.images.length > 0 && (
-          <CardContent className="pt-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleImages();
-              }}
-              className="text-blue-500 hover:text-blue-700 p-0 h-auto"
-            >
-              {toggleEventImages.includes(item.id)
-                ? `Hide Image${item.images.length > 1 ? 's' : ''}`
-                : `Show Image${item.images.length > 1 ? 's' : ''}`}{' '}
-              ({item.images.length})
-            </Button>
-          </CardContent>
-        )}
-
-        {/* Image Gallery */}
-        {item?.images &&
-          item.images.length > 0 &&
-          toggleEventImages.includes(item.id) && (
-            <CardContent className="pt-0">
-              <div className="flex flex-wrap gap-2">
-                {item.images.map((imageUrl: string, index: number) => (
-                  <div key={index} className="relative">
-                    <img
-                      src={imageUrl}
-                      alt={`Event image ${index + 1}`}
-                      className="w-24 h-24 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </CardContent>
+          {/* Image Toggle Button */}
+          {item?.images && item.images.length > 0 && (
+            <Box>
+              <Button
+                variant="subtle"
+                size="compact-sm"
+                leftSection={<ImageIcon size={16} />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleImages();
+                }}
+              >
+                {toggleEventImages.includes(item._id)
+                  ? `Hide Image${item.images.length > 1 ? 's' : ''}`
+                  : `Show Image${item.images.length > 1 ? 's' : ''}`}{' '}
+                ({item.images.length})
+              </Button>
+            </Box>
           )}
+
+          {/* Image Gallery */}
+          {item?.images &&
+            item.images.length > 0 &&
+            toggleEventImages.includes(item._id) && (
+              <Group gap="xs">
+                {item.images.map((imageUrl: string, index: number) => (
+                  <Image
+                    key={index}
+                    src={imageUrl}
+                    alt={`Event image ${index + 1}`}
+                    w={96}
+                    h={96}
+                    fit="cover"
+                    radius="md"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedImage(imageUrl);
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ))}
+              </Group>
+            )}
+        </Stack>
       </Card>
 
       {/* Image Modal */}
       {selectedImage && (
-        <Dialog
-          open={!!selectedImage}
-          onOpenChange={() => setSelectedImage(null)}
-        >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-            <div className="relative">
-              <img
-                src={selectedImage}
-                alt="Event Image"
-                className="w-full h-auto max-h-[85vh] object-contain"
-              />
-              <Button
-                variant="secondary"
-                size="icon"
-                className="absolute top-2 right-2"
-                onClick={() => setSelectedImage(null)}
-              >
-                ✕
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ImagePreviewModal
+          src={selectedImage}
+          onClose={() => setSelectedImage(null)}
+        />
       )}
     </>
   );
@@ -258,178 +252,148 @@ const EventsTableRow = ({
   const toggleImages = (e) => {
     e.stopPropagation();
     setToggleEventImages((prev) => {
-      if (prev.includes(item.id)) {
-        return prev.filter((id) => id !== item.id);
+      if (prev.includes(item._id)) {
+        return prev.filter((id) => id !== item._id);
       } else {
-        return [...prev, item.id];
+        return [...prev, item._id];
       }
     });
   };
 
   return (
     <>
-      <TableRow
-        className="hover: transition-colors cursor-pointer"
-        onClick={() => navigate(`/event-details-area/${item.id}`)}
+      <Table.Tr
+        style={{ cursor: 'pointer' }}
+        onClick={() => navigate(`/event-details-area/${item._id}`)}
       >
-        <TableCell>
-          <div className="flex items-center gap-2">
-            <Hash className="h-4 w-4 text-gray-400" />
-            <div>
-              <div className="font-medium">#{item?.id}</div>
-              <div
-                className="text-xs text-gray-500 max-w-[150px] truncate"
-                title={item?.name}
-              >
+        <Table.Td>
+          <Group gap="xs" wrap="nowrap">
+            <Hash size={16} color="var(--mantine-color-gray-5)" />
+            <Box>
+              <Text fw={500}>{recordRef(item)}</Text>
+              <Text size="xs" c="dimmed" maw={150} truncate title={item?.name}>
                 {item?.name}
-              </div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-start gap-2">
-            <MapPin className="h-4 w-4 text-blue-600 mt-0.5" />
-            <div>
-              <div className="font-medium">{item?.region?.name}</div>
-              <div className="text-xs text-gray-500">
+              </Text>
+            </Box>
+          </Group>
+        </Table.Td>
+        <Table.Td>
+          <Group gap="xs" wrap="nowrap" align="flex-start">
+            <MapPin
+              size={16}
+              color="var(--mantine-color-blue-6)"
+              style={{ flexShrink: 0, marginTop: 2 }}
+            />
+            <Box>
+              <Text fw={500}>{item?.region?.name}</Text>
+              <Text size="xs" c="dimmed">
                 {item?.territory?.name}
-              </div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="space-y-1 text-sm">
+              </Text>
+            </Box>
+          </Group>
+        </Table.Td>
+        <Table.Td>
+          <Stack gap={4}>
             {item?.demo_products?.length > 0 && (
-              <div className="flex items-start gap-1">
-                <span className="font-medium text-xs text-gray-500">
+              <Group gap={4} wrap="nowrap" align="flex-start">
+                <Text size="xs" fw={500} c="dimmed">
                   Products:
-                </span>
-                <span
-                  className="text-xs truncate max-w-[150px]"
+                </Text>
+                <Text
+                  size="xs"
+                  maw={150}
+                  truncate
                   title={item?.demo_products?.map((p) => p.name).join(', ')}
                 >
                   {item?.demo_products?.map((p) => p.name).join(', ')}
-                </span>
-              </div>
+                </Text>
+              </Group>
             )}
             {item?.crops?.length > 0 && (
-              <div className="flex items-start gap-1">
-                <span className="font-medium text-xs text-gray-500">Crop:</span>
-                <span
-                  className="text-xs truncate max-w-[150px]"
+              <Group gap={4} wrap="nowrap" align="flex-start">
+                <Text size="xs" fw={500} c="dimmed">
+                  Crop:
+                </Text>
+                <Text
+                  size="xs"
+                  maw={150}
+                  truncate
                   title={item?.crops?.map((c) => c.name).join(', ')}
                 >
                   {item?.crops?.map((c) => c.name).join(', ')}
-                </span>
-              </div>
+                </Text>
+              </Group>
             )}
-            <div className="flex items-start gap-1">
-              <span className="font-medium text-xs text-gray-500">Type:</span>
-              <span className="text-xs">{item?.event_type?.name}</span>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Calendar className="h-4 w-4" />
-            <div>
-              <div>{item?.date_begin}</div>
-              <div className="text-xs text-gray-400">to {item?.date_end}</div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex flex-col gap-1 items-start">
-            <Badge
-              className={`${
-                statusStyles[item?.event_stage?.name.toLowerCase()]
-              } border-0 text-[10px] capitalize`}
-            >
-              {item?.event_stage?.name}
-            </Badge>
-            <Badge
-              className={`${
-                statusStyles[item?.verified ? 'sent' : 'cancelled']
-              } border-0 text-[10px] flex items-center gap-1`}
-            >
-              {item?.verified ? (
-                <>
-                  <CheckCircle2 className="h-3 w-3" />
-                  Verified
-                </>
-              ) : (
-                <>
-                  <XCircle className="h-3 w-3" />
-                  Unverified
-                </>
-              )}
-            </Badge>
-            {item?.rsmAttended && (
-              <Badge
-                className={`${statusStyles.sent} border-0 text-[10px] flex items-center gap-1`}
-              >
-                <Users className="h-3 w-3" />
-                Attended
-              </Badge>
-            )}
-          </div>
-        </TableCell>
-        <TableCell>
+            <Group gap={4} wrap="nowrap" align="flex-start">
+              <Text size="xs" fw={500} c="dimmed">
+                Type:
+              </Text>
+              <Text size="xs">{item?.event_type?.name}</Text>
+            </Group>
+          </Stack>
+        </Table.Td>
+        <Table.Td>
+          <Group gap="xs" wrap="nowrap" c="dimmed">
+            <Calendar size={16} style={{ flexShrink: 0 }} />
+            <Box>
+              <Text size="sm">{item?.date_begin}</Text>
+              <Text size="xs">to {item?.date_end}</Text>
+            </Box>
+          </Group>
+        </Table.Td>
+        <Table.Td>
+          <Stack gap={4} align="flex-start">
+            <EventBadges item={item} size="sm" />
+          </Stack>
+        </Table.Td>
+        <Table.Td>
           {item?.images && item.images.length > 0 ? (
             <Button
-              variant="ghost"
-              size="sm"
+              variant="subtle"
+              size="compact-sm"
+              leftSection={<ImageIcon size={16} />}
               onClick={toggleImages}
-              className="text-blue-600 hover:text-blue-700 p-0 h-auto"
             >
-              <ImageIcon className="h-4 w-4 mr-1" />
-              {toggleEventImages.includes(item.id) ? 'Hide' : 'Show'} (
+              {toggleEventImages.includes(item._id) ? 'Hide' : 'Show'} (
               {item.images.length})
             </Button>
           ) : (
-            <span className="text-xs text-gray-400">No images</span>
+            <Text size="xs" c="dimmed">
+              No images
+            </Text>
           )}
-        </TableCell>
-      </TableRow>
+        </Table.Td>
+      </Table.Tr>
 
       {/* Image Gallery Row (conditionally rendered) */}
       {item?.images &&
         item.images.length > 0 &&
-        toggleEventImages.includes(item.id) && (
-          <TableRow>
-            <TableCell colSpan={6} className="p-4 border-b">
-              <div className="flex flex-wrap gap-2">
+        toggleEventImages.includes(item._id) && (
+          <Table.Tr>
+            <Table.Td colSpan={6} p="md">
+              <Group gap="xs">
                 {item.images.map((imageUrl, index) => (
-                  <div key={index} className="relative group">
-                    <img
-                      src={imageUrl}
-                      alt={`Event image ${index + 1}`}
-                      className="w-20 h-20 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity border bg-white"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                    <div
-                      className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 rounded-md flex items-center justify-center cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                    >
-                      <Eye
-                        className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                        size={16}
-                      />
-                    </div>
-                  </div>
+                  <Image
+                    key={index}
+                    src={imageUrl}
+                    alt={`Event image ${index + 1}`}
+                    w={80}
+                    h={80}
+                    fit="cover"
+                    radius="md"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedImage(imageUrl);
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
                 ))}
-              </div>
-            </TableCell>
-          </TableRow>
+              </Group>
+            </Table.Td>
+          </Table.Tr>
         )}
     </>
   );
@@ -445,7 +409,7 @@ const AreaEvents = () => {
   const [selectedDateRange, setSelectedDateRange] = useState<
     DateRange | undefined
   >(undefined);
-  const [toggleEventImages, setToggleEventImages] = useState<number[]>([]);
+  const [toggleEventImages, setToggleEventImages] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [pagination, setPagination] = useState({
     total: 0,
@@ -457,8 +421,9 @@ const AreaEvents = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const fetchEvents = (page = 1) => {
-    dispatch(resetProducts());
+  // `quiet` reloads in place, without swapping the list for a spinner.
+  const fetchEvents = (page = 1, quiet = false) => {
+    if (!quiet) dispatch(resetProducts());
     const onSuccess = (response) => {
       setLoading(false);
       setEvents(response.data);
@@ -468,9 +433,9 @@ const AreaEvents = () => {
     };
     const onError = () => {
       setLoading(false);
-      toast.error('Failed to fetch events', { description: 'Error' });
+      if (!quiet) toast.error('Failed to fetch events', { description: 'Error' });
     };
-    setLoading(true);
+    if (!quiet) setLoading(true);
 
     const params = new URLSearchParams({
       page: page.toString(),
@@ -485,7 +450,7 @@ const AreaEvents = () => {
 
     callApi(
       'GET',
-      `/events/region?${params.toString()}`,
+      `/v2/events/region?${params.toString()}`,
       null,
       onSuccess,
       onError,
@@ -504,6 +469,12 @@ const AreaEvents = () => {
     return () => clearTimeout(timer);
     // eslint-disable-next-line
   }, [currentPage, searchQuery, selectedDateRange]);
+
+  useQueuedRefresh(events, () => fetchEvents(currentPage, true));
+
+  // The Odoo id once the event has one, the job reference until then.
+  const refMatches = (item) =>
+    recordRef(item).toLowerCase().includes(searchQuery.toLowerCase());
 
   const groupByTerritory = () => {
     const grouped = events.reduce((acc, event) => {
@@ -564,7 +535,7 @@ const AreaEvents = () => {
       item?.event_type?.name
         ?.toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
-      item?.id.toString().includes(searchQuery);
+      refMatches(item);
 
     const matchesDate =
       !(selectedDateRange?.from && selectedDateRange?.to) ||
@@ -604,7 +575,7 @@ const AreaEvents = () => {
                 item?.event_type?.name
                   ?.toLowerCase()
                   .includes(searchQuery.toLowerCase()) ||
-                item?.id.toString().includes(searchQuery),
+                refMatches(item),
             ),
           })),
         )
@@ -622,78 +593,77 @@ const AreaEvents = () => {
               item?.event_type?.name
                 ?.toLowerCase()
                 .includes(searchQuery.toLowerCase()) ||
-              item?.id.toString().includes(searchQuery),
+              refMatches(item),
           ),
         }));
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-4 flex-1">
-          <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <div className="flex items-center gap-2 flex-1 max-w-md">
-            <Input
-              placeholder="Search by event name, region, territory, or ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1"
-            />
-          </div>
-        </div>
-        {events.length > 0 && (
-          <Dialog
-            open={filterModalVisible}
-            onOpenChange={setFilterModalVisible}
+    <Container size="xl" px={0}>
+      <Group justify="space-between" gap="sm" mb="lg" wrap="nowrap">
+        <Group gap="sm" flex={1} wrap="nowrap">
+          <ActionIcon
+            variant="default"
+            size="lg"
+            aria-label="Go back"
+            onClick={() => navigate(-1)}
           >
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Filter className="h-4 w-4 mr-2" />
-                Filter
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Filter Events</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
+            <ChevronLeft size={16} />
+          </ActionIcon>
+          <TextInput
+            flex={1}
+            maw={448}
+            placeholder="Search by event name, region, territory, or ID..."
+            leftSection={<Search size={16} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.currentTarget.value)}
+          />
+        </Group>
+        {events.length > 0 && (
+          <>
+            <Button
+              variant="default"
+              leftSection={<Filter size={16} />}
+              onClick={() => setFilterModalVisible(true)}
+            >
+              Filter
+            </Button>
+            <Modal
+              opened={filterModalVisible}
+              onClose={() => setFilterModalVisible(false)}
+              title={<Text fw={600}>Filter Events</Text>}
+            >
+              <Stack gap="md">
                 <DateFilter
                   selectedRange={selectedDateRange}
                   onSelect={setSelectedDateRange}
                   triggerMode="input"
-                  className="w-full"
                 />
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="territory"
-                      checked={selectedFilters.includes('territory')}
-                      onCheckedChange={(checked) =>
-                        setSelectedFilters((prev) =>
-                          checked
-                            ? [...prev, 'territory']
-                            : prev.filter((f) => f !== 'territory'),
-                        )
-                      }
-                    />
-                    <Label htmlFor="territory">Group by Territory</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="stages"
-                      checked={selectedFilters.includes('stages')}
-                      onCheckedChange={(checked) =>
-                        setSelectedFilters((prev) =>
-                          checked
-                            ? [...prev, 'stages']
-                            : prev.filter((f) => f !== 'stages'),
-                        )
-                      }
-                    />
-                    <Label htmlFor="stages">Group by Event Stages</Label>
-                  </div>
-                </div>
+                <Stack gap="xs">
+                  <Checkbox
+                    label="Group by Territory"
+                    checked={selectedFilters.includes('territory')}
+                    onChange={(e) => {
+                      const checked = e.currentTarget.checked;
+                      setSelectedFilters((prev) =>
+                        checked
+                          ? [...prev, 'territory']
+                          : prev.filter((f) => f !== 'territory'),
+                      );
+                    }}
+                  />
+                  <Checkbox
+                    label="Group by Event Stages"
+                    checked={selectedFilters.includes('stages')}
+                    onChange={(e) => {
+                      const checked = e.currentTarget.checked;
+                      setSelectedFilters((prev) =>
+                        checked
+                          ? [...prev, 'stages']
+                          : prev.filter((f) => f !== 'stages'),
+                      );
+                    }}
+                  />
+                </Stack>
                 <Button
                   onClick={() => {
                     setFilterBy({
@@ -705,147 +675,146 @@ const AreaEvents = () => {
                 >
                   Apply Filter
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </Stack>
+            </Modal>
+          </>
         )}
-      </div>
+      </Group>
 
       {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
+        <Group justify="center" h={256}>
+          <Loader />
+        </Group>
       ) : (
-        <div className="space-y-6">
-          {flattenedSections.map((section, index) => (
-            <div key={index}>
-              {section.title && (
-                <h2 className="text-xl font-semibold  p-2 rounded mb-4">
-                  {section.title}
-                </h2>
-              )}
-              {/* Desktop Table View */}
-              <div className="hidden md:block overflow-x-auto bg-white rounded-lg shadow border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold">ID / Name</TableHead>
-                      <TableHead className="font-semibold">Location</TableHead>
-                      <TableHead className="font-semibold">Details</TableHead>
-                      <TableHead className="font-semibold">Date</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
-                      <TableHead className="font-semibold">Images</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+        <Stack gap="lg">
+          <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'lg' }}>
+            <Stack gap="lg">
+              {flattenedSections.map((section, index) => (
+                <Box key={index}>
+                  {section.title && (
+                    <Title order={4} mb="md">
+                      {section.title}
+                    </Title>
+                  )}
+                  {/* Desktop Table View */}
+                  <Table.ScrollContainer minWidth={820} visibleFrom="md">
+                    <Table>
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th>ID / Name</Table.Th>
+                          <Table.Th>Location</Table.Th>
+                          <Table.Th>Details</Table.Th>
+                          <Table.Th>Date</Table.Th>
+                          <Table.Th>Status</Table.Th>
+                          <Table.Th>Images</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {section.data.map((item, idx) => (
+                          <EventsTableRow
+                            key={`desktop-${item._id}-${idx}`}
+                            item={item}
+                            toggleEventImages={toggleEventImages}
+                            setToggleEventImages={setToggleEventImages}
+                            setSelectedImage={setSelectedImage}
+                          />
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  </Table.ScrollContainer>
+
+                  {/* Mobile Card View */}
+                  <Stack gap="md" hiddenFrom="md">
                     {section.data.map((item, idx) => (
-                      <EventsTableRow
-                        key={`desktop-${item.id}-${idx}`}
+                      <EventsCard
+                        key={`mobile-${item._id}-${idx}`}
                         item={item}
                         toggleEventImages={toggleEventImages}
                         setToggleEventImages={setToggleEventImages}
-                        setSelectedImage={setSelectedImage}
                       />
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Mobile Card View */}
-              <div className="grid grid-cols-1 md:hidden gap-4 mt-4 md:mt-0">
-                {section.data.map((item, idx) => (
-                  <EventsCard
-                    key={`mobile-${item.id}-${idx}`}
-                    item={item}
-                    toggleEventImages={toggleEventImages}
-                    setToggleEventImages={setToggleEventImages}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-          {flattenedSections.every((section) => section.data.length === 0) && (
-            <div className="text-center text-gray-500 mt-8">
-              No event found under your region.
-            </div>
-          )}
+                  </Stack>
+                </Box>
+              ))}
+              {flattenedSections.every(
+                (section) => section.data.length === 0,
+              ) && (
+                <EmptyState
+                  icon={<Calendar size={32} />}
+                  title="No event found under your region."
+                />
+              )}
+            </Stack>
+          </Paper>
 
           {/* Pagination Controls */}
           {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between mt-8 bg-white p-4 rounded-lg border shadow-sm">
-              <div className="text-sm text-gray-500 font-medium">
-                Showing{' '}
-                <span className="text-gray-900 font-semibold">
-                  {(currentPage - 1) * pagination.limit + 1}
-                </span>{' '}
-                to{' '}
-                <span className="text-gray-900 font-semibold">
-                  {Math.min(currentPage * pagination.limit, pagination.total)}
-                </span>{' '}
-                of{' '}
-                <span className="text-gray-900 font-semibold">
-                  {pagination.total}
-                </span>{' '}
-                events
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.max(prev - 1, 1))
-                  }
-                  disabled={currentPage === 1 || loading}
-                  className="h-9 px-4"
-                >
-                  Previous
-                </Button>
-                <div className="flex items-center gap-1 mx-2">
-                  <span className="text-sm font-medium">Page</span>
-                  <span className="flex items-center justify-center bg-blue-50 text-blue-700 font-bold px-3 py-1 rounded-md text-sm border border-blue-100 min-w-[32px]">
-                    {currentPage}
-                  </span>
-                  <span className="text-sm font-medium">
-                    of {pagination.totalPages}
-                  </span>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setCurrentPage((prev) =>
-                      Math.min(prev + 1, pagination.totalPages),
-                    )
-                  }
-                  disabled={currentPage === pagination.totalPages || loading}
-                  className="h-9 px-4"
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
+            <Paper withBorder shadow="sm" p="md">
+              <Group justify="space-between" gap="sm">
+                <Text size="sm" c="dimmed" fw={500}>
+                  Showing{' '}
+                  <Text span fw={600} c="var(--mantine-color-text)">
+                    {(currentPage - 1) * pagination.limit + 1}
+                  </Text>{' '}
+                  to{' '}
+                  <Text span fw={600} c="var(--mantine-color-text)">
+                    {Math.min(currentPage * pagination.limit, pagination.total)}
+                  </Text>{' '}
+                  of{' '}
+                  <Text span fw={600} c="var(--mantine-color-text)">
+                    {pagination.total}
+                  </Text>{' '}
+                  events
+                </Text>
+                <Group gap="xs">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.max(prev - 1, 1))
+                    }
+                    disabled={currentPage === 1 || loading}
+                  >
+                    Previous
+                  </Button>
+                  <Group gap={6} mx="xs">
+                    <Text size="sm" fw={500}>
+                      Page
+                    </Text>
+                    <Badge variant="light" size="lg" radius="md">
+                      {currentPage}
+                    </Badge>
+                    <Text size="sm" fw={500}>
+                      of {pagination.totalPages}
+                    </Text>
+                  </Group>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentPage((prev) =>
+                        Math.min(prev + 1, pagination.totalPages),
+                      )
+                    }
+                    disabled={currentPage === pagination.totalPages || loading}
+                  >
+                    Next
+                  </Button>
+                </Group>
+              </Group>
+            </Paper>
           )}
-        </div>
+        </Stack>
       )}
 
       {/* Shared Image Modal for Desktop Table */}
       {selectedImage && (
-        <Dialog
-          open={!!selectedImage}
-          onOpenChange={() => setSelectedImage(null)}
-        >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-            <div className="relative">
-              <img
-                src={selectedImage}
-                alt="Event Image"
-                className="w-full h-auto max-h-[85vh] object-contain"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ImagePreviewModal
+          src={selectedImage}
+          onClose={() => setSelectedImage(null)}
+        />
       )}
-    </div>
+    </Container>
   );
 };
 

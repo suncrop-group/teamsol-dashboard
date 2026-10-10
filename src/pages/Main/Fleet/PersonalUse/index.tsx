@@ -1,20 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import {
+  Box,
+  Button,
+  Card,
+  Container,
+  Group,
+  Loader,
+  Paper,
+  Stack,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-
+  Text,
+  TextInput,
+} from '@mantine/core';
 import {
-  Loader2,
   Search,
   Plus,
   Calendar,
@@ -23,255 +22,234 @@ import {
   X,
   FileText,
 } from 'lucide-react';
-import { callApi, callServerAPI } from '@/api';
-import { priceFormatter } from '@/utils';
 import dayjs from 'dayjs';
-import { toast } from 'sonner';
+import { callApi } from '@/api';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { DateFilter } from '@/components/DateFilter';
-import type { DateRange } from 'react-day-picker';
+  errorMessage,
+  isFailed,
+  isQueued,
+  isUnsynced,
+  recordRef,
+  useQueuedRefresh,
+} from '@/api/v2';
+import { priceFormatter } from '@/utils';
+import { toast } from '@/lib/toast';
+import { DateFilter, type DateRange } from '@/components/DateFilter';
+import {
+  ConfirmModal,
+  EmptyState,
+  FailedActions,
+  PageHeader,
+  StatusBadge,
+} from '@/components/app';
 
-const statusStyles = {
-  sent: 'bg-green-100 text-green-800 hover:bg-green-200',
-  pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  cancelled: 'bg-red-100 text-red-800 hover:bg-red-200',
-  quotation: 'bg-teal-100 text-teal-800 hover:bg-teal-200',
-  approved: 'bg-green-100 text-green-800 hover:bg-green-200',
-  draft: 'bg-red-100 text-red-800 hover:bg-red-200',
-  confirmed: 'bg-green-100 text-green-800 hover:bg-green-200',
-  submitted: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  approval: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  to_report: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  'to report': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  submit: 'bg-green-100 text-green-800 hover:bg-green-200',
-  cancel: 'bg-red-100 text-red-800 hover:bg-red-200',
-};
+const RESOURCE = '/v2/fleet/personal-use';
+
+interface PersonalUseItem {
+  _id: string;
+  id?: number;
+  jobId?: string;
+  personal_travel: string;
+  personal_travel_amount: number;
+  name?: string;
+  status?: string;
+  odooStatus?: string;
+  syncError?: string;
+  date: string;
+}
+
+interface PersonalUseItemProps {
+  item: PersonalUseItem;
+  onCancel: (item: PersonalUseItem) => void;
+  onEdit: (item: PersonalUseItem) => void;
+  onChanged: () => void;
+}
+
+// An entry still waiting in the queue can be cancelled; once it is in Odoo,
+// only while Odoo has it as a draft.
+const canCancel = (item: PersonalUseItem) =>
+  isQueued(item) ||
+  (!isUnsynced(item) && item.odooStatus?.toLowerCase() === 'draft');
+
+// Our status always; Odoo's own state once the entry is there.
+const Statuses = ({
+  item,
+  size,
+  align,
+}: {
+  item: PersonalUseItem;
+  size?: string;
+  align?: string;
+}) => (
+  <Stack gap={4} align={align}>
+    <StatusBadge status={item.status} size={size} />
+    {!isUnsynced(item) && <StatusBadge status={item.odooStatus} size={size} />}
+  </Stack>
+);
+
+const Actions = ({
+  item,
+  onCancel,
+  onEdit,
+  onChanged,
+  card,
+}: PersonalUseItemProps & { card?: boolean }) =>
+  isFailed(item) ? (
+    <FailedActions
+      item={item}
+      resource={RESOURCE}
+      onEdit={() => onEdit(item)}
+      onChanged={onChanged}
+    />
+  ) : (
+    <Button
+      color="red"
+      variant="light"
+      size={card ? 'sm' : 'xs'}
+      fullWidth={card}
+      leftSection={card ? <X size={16} /> : undefined}
+      onClick={() => onCancel(item)}
+      disabled={!canCancel(item)}
+    >
+      Cancel
+    </Button>
+  );
 
 // Mobile Card Component
-const PersonalUseCard = ({
-  item,
-  onConfirmDelete,
-}: {
-  item: {
-    id: number;
-    personal_travel: number;
-    personal_travel_amount: number;
-    createdAt: string;
-    name?: string;
-    status?: string;
-    odooStatus?: string;
-    company_id?: number;
-    date: string;
-  };
-  onConfirmDelete: (id: number) => void;
-}) => {
+const PersonalUseCard = (props: PersonalUseItemProps) => {
+  const { item } = props;
   return (
-    <Card className="hover:shadow-lg transition-shadow duration-200">
-      <CardContent className="p-4 space-y-3">
-        {/* Header with Distance and Cost */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <Navigation className="h-4 w-4 text-blue-600" />
-              <h3 className="font-semibold text-base">
-                {item.personal_travel} KM
-              </h3>
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-medium text-gray-500">PKR</span>
-              <span className="font-medium text-green-600">
+    <Card withBorder padding="md">
+      <Stack gap="sm">
+        <Group justify="space-between" align="flex-start" wrap="nowrap">
+          <Box>
+            <Group gap="xs">
+              <Navigation size={16} color="var(--mantine-color-blue-6)" />
+              <Text fw={600}>{item.personal_travel} KM</Text>
+            </Group>
+            <Group gap={6} mt={4}>
+              <Text size="xs" fw={500} c="dimmed">
+                PKR
+              </Text>
+              <Text fw={500} c="green">
                 {priceFormatter(item.personal_travel_amount)}
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1 items-end">
-            <Badge
-              className={`${
-                statusStyles[item.status?.toLowerCase()]
-              } border-0 text-xs capitalize`}
-            >
-              {item.status || 'N/A'}
-            </Badge>
-            <Badge
-              className={`${
-                statusStyles[item.odooStatus?.toLowerCase()]
-              } border-0 text-xs capitalize`}
-            >
-              {item.odooStatus || 'N/A'}
-            </Badge>
-          </div>
-        </div>
+              </Text>
+            </Group>
+          </Box>
+          <Statuses item={item} size="sm" align="flex-end" />
+        </Group>
 
-        {/* ID and Date */}
-        <div className="space-y-1 text-sm text-gray-600">
-          <div className="flex items-center gap-2">
-            <Hash className="h-4 w-4" />
-            <span>#{item.id}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            <span>{dayjs(item.date).format('DD/MM/YYYY')}</span>
-          </div>
-        </div>
+        <Stack gap={4}>
+          <Group gap="xs" c="dimmed">
+            <Hash size={16} />
+            <Text size="sm">{recordRef(item)}</Text>
+          </Group>
+          <Group gap="xs" c="dimmed">
+            <Calendar size={16} />
+            <Text size="sm">{dayjs(item.date).format('DD/MM/YYYY')}</Text>
+          </Group>
+        </Stack>
 
-        {/* Description */}
         {item.name && (
-          <div className="flex items-start gap-2 text-sm">
-            <FileText className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
-            <p className="text-gray-600 line-clamp-2">{item.name}</p>
-          </div>
+          <Group gap="xs" align="flex-start" wrap="nowrap" c="dimmed">
+            <FileText size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+            <Text size="sm" lineClamp={2}>
+              {item.name}
+            </Text>
+          </Group>
         )}
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-2 border-t">
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => onConfirmDelete(item.id)}
-            disabled={item.odooStatus?.toLowerCase() !== 'draft'}
-            className="flex-1"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Cancel
-          </Button>
-        </div>
-      </CardContent>
+        <Actions {...props} card />
+      </Stack>
     </Card>
   );
 };
 
 // Desktop Table Row Component
-const PersonalUseRow = ({
-  item,
-  onConfirmDelete,
-}: {
-  item: {
-    id: number;
-    personal_travel: number;
-    personal_travel_amount: number;
-    createdAt: string;
-    name?: string;
-    status?: string;
-    odooStatus?: string;
-    company_id?: number;
-    date: string;
-  };
-  onConfirmDelete: (id: number) => void;
-}) => {
+const PersonalUseRow = (props: PersonalUseItemProps) => {
+  const { item } = props;
   return (
-    <TableRow className="hover: transition-colors">
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Hash className="h-4 w-4 text-gray-400" />
-          <span className="font-medium">#{item.id}</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Navigation className="h-4 w-4 text-blue-600" />
-          <span className="font-semibold">{item.personal_travel} KM</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-gray-500">PKR</span>
-          <span className="font-semibold text-green-600">
+    <Table.Tr>
+      <Table.Td>
+        <Text fw={500}>{recordRef(item)}</Text>
+      </Table.Td>
+      <Table.Td>
+        <Group gap="xs" wrap="nowrap">
+          <Navigation size={16} color="var(--mantine-color-blue-6)" />
+          <Text fw={600}>{item.personal_travel} KM</Text>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap={6} wrap="nowrap">
+          <Text size="xs" fw={500} c="dimmed">
+            PKR
+          </Text>
+          <Text fw={600} c="green">
             {priceFormatter(item.personal_travel_amount)}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-start gap-2">
-          <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-          <span className="text-sm line-clamp-2">
-            {item.name || 'No description'}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <Calendar className="h-4 w-4" />
-          <div>
-            <div>{dayjs(item.date).format('DD/MM/YYYY')}</div>
-          </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex flex-col gap-1">
-          <Badge
-            className={`${
-              statusStyles[item.status?.toLowerCase()]
-            } border-0 w-fit capitalize`}
-          >
-            {item.status || 'N/A'}
-          </Badge>
-          <Badge
-            className={`${
-              statusStyles[item.odooStatus?.toLowerCase()]
-            } border-0 w-fit capitalize`}
-          >
-            {item.odooStatus || 'N/A'}
-          </Badge>
-        </div>
-      </TableCell>
-      <TableCell>
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={() => onConfirmDelete(item.id)}
-          disabled={item.odooStatus?.toLowerCase() !== 'draft'}
-        >
-          Cancel
-        </Button>
-      </TableCell>
-    </TableRow>
+          </Text>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm" lineClamp={2}>
+          {item.name || 'No description'}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm" c="dimmed">
+          {dayjs(item.date).format('DD/MM/YYYY')}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        <Statuses item={item} />
+      </Table.Td>
+      <Table.Td maw={280}>
+        <Actions {...props} />
+      </Table.Td>
+    </Table.Tr>
   );
 };
 
 const PersonalUse = () => {
   const navigate = useNavigate();
-  const [personalUses, setPersonalUses] = useState([]);
+  const [personalUses, setPersonalUses] = useState<PersonalUseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateRange, setSelectedDateRange] = useState<
     DateRange | undefined
   >(undefined);
-  const [toDeleteId, setToDeleteId] = useState(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [loadingDelete, setLoadingDelete] = useState(false);
+  const [toCancel, setToCancel] = useState<PersonalUseItem | null>(null);
+  const [loadingCancel, setLoadingCancel] = useState(false);
 
-  const fetchPersonalUses = async () => {
-    const onSuccess = (response) => {
-      const sortedData = response.data.sort(
-        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
-      );
-      setPersonalUses(sortedData);
-      setLoading(false);
-    };
-    const onError = () => {
-      toast.error('Failed to fetch personal use records');
-      setPersonalUses([]);
-      setLoading(false);
-    };
-
-    setLoading(true);
-    callApi('GET', '/fleet/personal-use', null, onSuccess, onError);
+  // `quiet` reloads in place, without swapping the table for a spinner.
+  const fetchPersonalUses = (quiet = false) => {
+    if (!quiet) setLoading(true);
+    callApi(
+      'GET',
+      `${RESOURCE}?limit=200`,
+      null,
+      (response) => {
+        setLoading(false);
+        setPersonalUses(response.data || []);
+      },
+      () => {
+        setLoading(false);
+        if (!quiet) {
+          toast.error('Failed to fetch personal use records');
+          setPersonalUses([]);
+        }
+      },
+    );
   };
 
   useEffect(() => {
     fetchPersonalUses();
   }, []);
 
+  useQueuedRefresh(personalUses, () => fetchPersonalUses(true));
+
   const filteredPersonalUses = personalUses.filter((item) => {
     const matchesSearch =
-      `${item.id} ${item.personal_travel} ${item.personal_travel_amount} ${item.name}`
+      `${recordRef(item)} ${item.personal_travel} ${item.personal_travel_amount} ${item.name || ''}`
         .toLowerCase()
         .includes(searchQuery.toLowerCase());
 
@@ -284,204 +262,134 @@ const PersonalUse = () => {
     return matchesSearch && matchesDate;
   });
 
-  const onConfirmDelete = () => {
-    if (toDeleteId === null) return;
-    const findRecord = personalUses.find((item) => item.id === toDeleteId);
+  const onConfirmCancel = () => {
+    if (!toCancel) return;
 
-    if (!findRecord) {
-      toast.error('Personal use record not found');
-      return;
-    }
-
-    const data: {
-      expense_id: number;
-      company_id: number;
-    } = {
-      expense_id: toDeleteId,
-      company_id: findRecord.company_id,
-    };
-
-    const onSuccess = () => {
-      callApi(
-        'PATCH',
-        '/fleet/personal-use/cancel',
-        {
-          id: toDeleteId,
-          company_id: findRecord.company_id,
-        },
-        () => {
-          toast.success('Personal use record cancelled successfully');
-          fetchPersonalUses();
-          setDeleteDialogOpen(false);
-          setToDeleteId(null);
-          setLoadingDelete(false);
-        },
-        () => {
-          toast.error(
+    setLoadingCancel(true);
+    callApi(
+      'POST',
+      `${RESOURCE}/${toCancel._id}/cancel`,
+      {},
+      () => {
+        toast.success('Personal use record cancelled');
+        setLoadingCancel(false);
+        setToCancel(null);
+        fetchPersonalUses(true);
+      },
+      (error) => {
+        setLoadingCancel(false);
+        setToCancel(null);
+        toast.error(
+          errorMessage(
+            error,
             'Failed to cancel personal use record. Please try again.',
-          );
-          setLoadingDelete(false);
-        },
-      );
-    };
+          ),
+        );
+      },
+    );
+  };
 
-    const onError = (error) => {
-      setDeleteDialogOpen(false);
-      setToDeleteId(null);
-      setLoadingDelete(false);
-      toast.error(
-        error?.message ||
-          'Failed to cancel personal use record. Please try again.',
-      );
-    };
-
-    setLoadingDelete(true);
-    callServerAPI('POST', '/delete/expenses', { data }, onSuccess, onError);
+  const rowProps = {
+    onCancel: setToCancel,
+    onEdit: (item: PersonalUseItem) =>
+      navigate('/add-personal-use', { state: { record: item } }),
+    onChanged: () => fetchPersonalUses(true),
   };
 
   return (
-    <div className="min-h-screen  p-4">
-      <div className="container mx-auto max-w-7xl">
-        <Card className="shadow-lg border-0">
-          <CardHeader className="bg-white border-b">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <CardTitle className="text-2xl font-bold">
-                Personal Use Records
-              </CardTitle>
-              <Button onClick={() => navigate('/add-personal-use')}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Personal Use
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6">
-            {/* Search Bar */}
-            <div className="mb-6 flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search by ID, distance, amount, or name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <DateFilter
-                selectedRange={selectedDateRange}
-                onSelect={setSelectedDateRange}
-              />
-            </div>
+    <Container size="xl" px={0}>
+      <PageHeader
+        title="Personal Use Records"
+        actions={
+          <Button
+            leftSection={<Plus size={16} />}
+            onClick={() => navigate('/add-personal-use')}
+          >
+            Add Personal Use
+          </Button>
+        }
+      />
 
-            {loading ? (
-              <div className="flex justify-center items-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-              </div>
-            ) : filteredPersonalUses.length === 0 ? (
-              <div className="text-center py-12">
-                <Navigation className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
-                  {searchQuery
-                    ? 'No personal use records found matching your search.'
-                    : 'No personal use records found.'}
-                </p>
-                <p className="text-gray-400 text-sm mt-2">
-                  {!searchQuery &&
-                    'Add your first personal use record to get started.'}
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Desktop Table View */}
-                <div className="hidden md:block overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="font-semibold">ID</TableHead>
-                        <TableHead className="font-semibold">
-                          Distance
-                        </TableHead>
-                        <TableHead className="font-semibold">Amount</TableHead>
-                        <TableHead className="font-semibold">
-                          Description
-                        </TableHead>
-                        <TableHead className="font-semibold">Date</TableHead>
-                        <TableHead className="font-semibold">Status</TableHead>
-                        <TableHead className="font-semibold">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredPersonalUses.map((item) => (
-                        <PersonalUseRow
-                          key={item.id}
-                          item={item}
-                          onConfirmDelete={(id) => {
-                            setToDeleteId(id);
-                            setDeleteDialogOpen(true);
-                          }}
-                        />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+      <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'lg' }}>
+        <Group gap="sm" mb="lg" wrap="nowrap">
+          <TextInput
+            flex={1}
+            placeholder="Search by ID, distance, amount, or name..."
+            leftSection={<Search size={16} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.currentTarget.value)}
+          />
+          <DateFilter
+            selectedRange={selectedDateRange}
+            onSelect={setSelectedDateRange}
+          />
+        </Group>
 
-                {/* Mobile Card View */}
-                <div className="md:hidden space-y-4">
+        {loading ? (
+          <Group justify="center" h={256}>
+            <Loader />
+          </Group>
+        ) : filteredPersonalUses.length === 0 ? (
+          <EmptyState
+            icon={<Navigation size={32} />}
+            title={
+              searchQuery
+                ? 'No personal use records found matching your search.'
+                : 'No personal use records found.'
+            }
+            description={
+              !searchQuery &&
+              'Add your first personal use record to get started.'
+            }
+          />
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <Table.ScrollContainer minWidth={820} visibleFrom="md">
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>ID</Table.Th>
+                    <Table.Th>Distance</Table.Th>
+                    <Table.Th>Amount</Table.Th>
+                    <Table.Th>Description</Table.Th>
+                    <Table.Th>Date</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th>Actions</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
                   {filteredPersonalUses.map((item) => (
-                    <PersonalUseCard
-                      key={item.id}
-                      item={item}
-                      onConfirmDelete={(id) => {
-                        setToDeleteId(id);
-                        setDeleteDialogOpen(true);
-                      }}
-                    />
+                    <PersonalUseRow key={item._id} item={item} {...rowProps} />
                   ))}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+
+            {/* Mobile Card View */}
+            <Stack gap="md" hiddenFrom="md">
+              {filteredPersonalUses.map((item) => (
+                <PersonalUseCard key={item._id} item={item} {...rowProps} />
+              ))}
+            </Stack>
+          </>
+        )}
+      </Paper>
 
       {/* Cancel Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancel Personal Use Record</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to cancel personal use record #{toDeleteId}?
-              This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteDialogOpen(false);
-                setToDeleteId(null);
-              }}
-              disabled={loadingDelete}
-            >
-              No, Keep It
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={onConfirmDelete}
-              disabled={loadingDelete}
-            >
-              {loadingDelete ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Cancelling...
-                </>
-              ) : (
-                'Yes, Cancel'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      <ConfirmModal
+        opened={!!toCancel}
+        onClose={() => setToCancel(null)}
+        onConfirm={onConfirmCancel}
+        title="Cancel Personal Use Record"
+        confirmLabel="Yes, Cancel"
+        cancelLabel="No, Keep It"
+        loading={loadingCancel}
+      >
+        Are you sure you want to cancel personal use record{' '}
+        {toCancel ? recordRef(toCancel) : ''}? This action cannot be undone.
+      </ConfirmModal>
+    </Container>
   );
 };
 

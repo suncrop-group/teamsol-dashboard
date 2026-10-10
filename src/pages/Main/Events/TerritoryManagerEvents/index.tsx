@@ -1,87 +1,104 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useDispatch } from "react-redux";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
+  Badge,
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Container,
+  Group,
+  Image,
+  Loader,
+  Modal,
+  Paper,
+  Stack,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-
-import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import {
   Filter,
-  ChevronLeft,
-  Eye,
   CheckCircle2,
   XCircle,
   Users,
   MapPin,
   Calendar,
+  Clock,
   Image as ImageIcon,
   Hash,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import dayjs from 'dayjs';
-import { callApi } from '@/api';
-import { resetProducts } from '@/redux/slices/OrderCreationSlice';
-import { Loader2 } from 'lucide-react';
-import { DateFilter } from '@/components/DateFilter';
-import type { DateRange } from 'react-day-picker';
+  Plus,
+  Search,
+} from "lucide-react";
+import dayjs from "dayjs";
+import { callApi } from "@/api";
+import { isFailed, isUnsynced, recordRef, useQueuedRefresh } from "@/api/v2";
+import { resetProducts } from "@/redux/slices/OrderCreationSlice";
+import { toast } from "@/lib/toast";
+import { DateFilter, type DateRange } from "@/components/DateFilter";
+import {
+  EmptyState,
+  FailedActions,
+  PageHeader,
+  StatusBadge,
+} from "@/components/app";
 
-const statusStyles = {
-  sent: 'bg-green-100 text-green-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  canceled: 'bg-red-100 text-red-800',
-  quotation: 'bg-blue-100 text-blue-800',
-  approved: 'bg-green-100 text-green-800',
-  draft: 'bg-red-100 text-red-800',
-  confirmed: 'bg-green-100 text-green-800',
-  approval: 'bg-yellow-100 text-yellow-800',
-  approve: 'bg-green-100 text-green-800',
-  submit: 'bg-green-100 text-green-800',
-  'to report': 'bg-yellow-100 text-yellow-800',
-  submitted: 'bg-blue-100 text-blue-800',
-  done: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  refuse: 'bg-red-100 text-red-800',
-  refused: 'bg-red-100 text-red-800',
-  cancelled: 'bg-red-100 text-red-800',
-  announced: 'bg-green-100 text-green-800',
-  new: 'bg-yellow-100 text-yellow-800',
-  completed: 'bg-green-100 text-green-800',
-  closed: 'bg-red-100 text-red-800',
-  'in progress': 'bg-yellow-100 text-yellow-800',
-  'in review': 'bg-yellow-100 text-yellow-800',
-  'in process': 'bg-yellow-100 text-yellow-800',
-  'in preparation': 'bg-yellow-100 text-yellow-800',
-  'in transit': 'bg-yellow-100 text-yellow-800',
+const RESOURCE = "/v2/events";
+
+// Until the event is in Odoo it has no stage: show where it is in the queue.
+const StageBadge = ({ item }) => (
+  <StatusBadge
+    status={isUnsynced(item) ? item.status : item?.event_stage?.name}
+    size="sm"
+  />
+);
+
+// Reason Odoo refused the event, with Edit & resend / Resend / Discard.
+// Clicks (the discard dialog's too) must not open the event underneath.
+const Failed = ({ item, onChanged }) => {
+  const navigate = useNavigate();
+  return (
+    <Box onClick={(e) => e.stopPropagation()} maw={280}>
+      <FailedActions
+        item={item}
+        resource={RESOURCE}
+        onEdit={() => navigate("/add-event", { state: { record: item } })}
+        onChanged={onChanged}
+      />
+    </Box>
+  );
 };
 
-const EventsCard = ({ item, toggleEventImages, setToggleEventImages }) => {
+const ImagePreviewModal = ({
+  image,
+  onClose,
+}: {
+  image: string | null;
+  onClose: () => void;
+}) =>
+  image ? (
+    <Modal opened={!!image} onClose={onClose} size="xl" centered>
+      <Image src={image} alt="Event Image" fit="contain" mah="75vh" />
+    </Modal>
+  ) : null;
+
+const EventsCard = ({
+  item,
+  toggleEventImages,
+  setToggleEventImages,
+  onChanged,
+}) => {
   const navigate = useNavigate();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const toggleImages = () => {
     setToggleEventImages((prev) => {
-      if (prev.includes(item.id)) {
-        return prev.filter((id) => id !== item.id);
+      if (prev.includes(item._id)) {
+        return prev.filter((id) => id !== item._id);
       } else {
-        return [...prev, item.id];
+        return [...prev, item._id];
       }
     });
   };
@@ -89,135 +106,110 @@ const EventsCard = ({ item, toggleEventImages, setToggleEventImages }) => {
   return (
     <>
       <Card
-        className="w-full cursor-pointer hover:shadow-md transition-shadow md:hidden"
-        onClick={() => navigate(`/event-details/${item.id}`)}
+        withBorder
+        padding="md"
+        style={{ cursor: "pointer" }}
+        onClick={() => navigate(`/event-details/${item._id}`)}
       >
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold">
-            #{item?.id} - {item?.name}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm text-gray-600">
+        <Stack gap="sm">
+          <Text fw={600} size="lg">
+            {recordRef(item)} - {item?.name}
+          </Text>
+          <Group justify="space-between" align="flex-start" wrap="nowrap">
+            <Text size="sm" c="dimmed">
               {item?.region?.name} - {item?.territory?.name}
-            </span>
-            <div className="flex flex-col items-end gap-2">
-              <span
-                className={`text-xs px-2 py-1 rounded ${
-                  statusStyles[item?.event_stage?.name.toLowerCase()]
-                }`}
-              >
-                {item?.event_stage?.name}
-              </span>
-              <span
-                className={`text-xs px-2 py-1 rounded ${
-                  statusStyles[item?.verified ? 'sent' : 'cancelled']
-                }`}
-              >
-                {item?.verified ? 'Verified' : 'Unverified'}
-              </span>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div>
-              <span className="text-sm font-medium">Products: </span>
-              <span className="text-sm">
-                {item?.demo_products?.map((product) => product.name).join(', ')}
-              </span>
-            </div>
-            <div>
-              <span className="text-sm font-medium">Crop: </span>
-              <span className="text-sm">
-                {item?.crops?.map((crop) => crop.name).join(', ')}
-              </span>
-            </div>
-            <div>
-              <span className="text-sm font-medium">Event Type: </span>
-              <span className="text-sm">{item?.event_type?.name}</span>
-            </div>
-            <div className="text-sm text-gray-600">
-              {item?.date_begin} - {item?.date_end} 🕒
-            </div>
-          </div>
+            </Text>
+            <Stack gap={4} align="flex-end">
+              <StageBadge item={item} />
+              <StatusBadge
+                status={item?.verified ? "Verified" : "Unverified"}
+                size="sm"
+              />
+            </Stack>
+          </Group>
+          <Stack gap={4}>
+            <Text size="sm">
+              <Text span fw={500}>
+                Products:{" "}
+              </Text>
+              {item?.demo_products?.map((product) => product.name).join(", ")}
+            </Text>
+            <Text size="sm">
+              <Text span fw={500}>
+                Crop:{" "}
+              </Text>
+              {item?.crops?.map((crop) => crop.name).join(", ")}
+            </Text>
+            <Text size="sm">
+              <Text span fw={500}>
+                Event Type:{" "}
+              </Text>
+              {item?.event_type?.name}
+            </Text>
+            <Group gap="xs" c="dimmed" wrap="nowrap">
+              <Clock size={16} style={{ flexShrink: 0 }} />
+              <Text size="sm">
+                {item?.date_begin} - {item?.date_end}
+              </Text>
+            </Group>
+          </Stack>
+
+          {isFailed(item) && <Failed item={item} onChanged={onChanged} />}
 
           {/* Image Toggle Button */}
           {item?.images && item.images.length > 0 && (
-            <div className="mt-3">
+            <Box>
               <Button
-                variant="ghost"
-                size="sm"
+                variant="subtle"
+                size="compact-sm"
+                leftSection={<ImageIcon size={16} />}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleImages();
                 }}
-                className="text-blue-500 hover:text-blue-700 p-0 h-auto"
               >
-                {toggleEventImages.includes(item.id)
-                  ? `Hide Image${item.images.length > 1 ? 's' : ''}`
-                  : `Show Image${item.images.length > 1 ? 's' : ''}`}{' '}
+                {toggleEventImages.includes(item._id)
+                  ? `Hide Image${item.images.length > 1 ? "s" : ""}`
+                  : `Show Image${item.images.length > 1 ? "s" : ""}`}{" "}
                 ({item.images.length})
               </Button>
-            </div>
+            </Box>
           )}
 
           {/* Image Gallery */}
           {item?.images &&
             item.images.length > 0 &&
-            toggleEventImages.includes(item.id) && (
-              <div className="mt-3">
-                <div className="flex flex-wrap gap-2">
-                  {item.images.map((imageUrl, index) => (
-                    <div key={index} className="relative group">
-                      <img
-                        src={imageUrl}
-                        alt={`Event image ${index + 1}`}
-                        className="w-24 h-24 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedImage(imageUrl);
-                        }}
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                      <div
-                        className="absolute  bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 rounded-md flex items-center justify-center"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedImage(imageUrl);
-                        }}
-                      >
-                        <Eye
-                          className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                          size={16}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            toggleEventImages.includes(item._id) && (
+              <Group gap="xs">
+                {item.images.map((imageUrl, index) => (
+                  <Image
+                    key={index}
+                    src={imageUrl}
+                    alt={`Event image ${index + 1}`}
+                    w={96}
+                    h={96}
+                    fit="cover"
+                    radius="md"
+                    style={{ cursor: "pointer" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedImage(imageUrl);
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
+                  />
+                ))}
+              </Group>
             )}
-        </CardContent>
+        </Stack>
       </Card>
 
       {/* Image Modal */}
-      {selectedImage && (
-        <Dialog
-          open={!!selectedImage}
-          onOpenChange={() => setSelectedImage(null)}
-        >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-            <div className="relative">
-              <img
-                src={selectedImage}
-                alt="Event Image"
-                className="w-full h-auto max-h-[85vh] object-contain"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+      <ImagePreviewModal
+        image={selectedImage}
+        onClose={() => setSelectedImage(null)}
+      />
     </>
   );
 };
@@ -227,184 +219,177 @@ const EventsTableRow = ({
   toggleEventImages,
   setToggleEventImages,
   setSelectedImage,
+  onChanged,
 }) => {
   const navigate = useNavigate();
 
   const toggleImages = (e) => {
     e.stopPropagation();
     setToggleEventImages((prev) => {
-      if (prev.includes(item.id)) {
-        return prev.filter((id) => id !== item.id);
+      if (prev.includes(item._id)) {
+        return prev.filter((id) => id !== item._id);
       } else {
-        return [...prev, item.id];
+        return [...prev, item._id];
       }
     });
   };
 
   return (
     <>
-      <TableRow
-        className="hover: transition-colors cursor-pointer"
-        onClick={() => navigate(`/event-details/${item.id}`)}
+      <Table.Tr
+        style={{ cursor: "pointer" }}
+        onClick={() => navigate(`/event-details/${item._id}`)}
       >
-        <TableCell>
-          <div className="flex items-center gap-2">
-            <Hash className="h-4 w-4 text-gray-400" />
-            <div>
-              <div className="font-medium">#{item?.id}</div>
-              <div
-                className="text-xs text-gray-500 max-w-[150px] truncate"
-                title={item?.name}
-              >
+        <Table.Td>
+          <Group gap="xs" wrap="nowrap">
+            <Hash size={16} color="var(--mantine-color-gray-5)" />
+            <Box>
+              <Text fw={500}>{recordRef(item)}</Text>
+              <Text size="xs" c="dimmed" maw={150} truncate title={item?.name}>
                 {item?.name}
-              </div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-start gap-2">
-            <MapPin className="h-4 w-4 text-blue-600 mt-0.5" />
-            <div>
-              <div className="font-medium">{item?.region?.name}</div>
-              <div className="text-xs text-gray-500">
+              </Text>
+            </Box>
+          </Group>
+        </Table.Td>
+        <Table.Td>
+          <Group gap="xs" wrap="nowrap" align="flex-start">
+            <MapPin
+              size={16}
+              color="var(--mantine-color-blue-6)"
+              style={{ flexShrink: 0, marginTop: 2 }}
+            />
+            <Box>
+              <Text fw={500}>{item?.region?.name}</Text>
+              <Text size="xs" c="dimmed">
                 {item?.territory?.name}
-              </div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="space-y-1 text-sm">
+              </Text>
+            </Box>
+          </Group>
+        </Table.Td>
+        <Table.Td>
+          <Stack gap={4}>
             {item?.demo_products?.length > 0 && (
-              <div className="flex items-start gap-1">
-                <span className="font-medium text-xs text-gray-500">
+              <Group gap={4} wrap="nowrap" align="flex-start">
+                <Text size="xs" fw={500} c="dimmed">
                   Products:
-                </span>
-                <span
-                  className="text-xs truncate max-w-[150px]"
-                  title={item?.demo_products?.map((p) => p.name).join(', ')}
+                </Text>
+                <Text
+                  size="xs"
+                  maw={150}
+                  truncate
+                  title={item?.demo_products?.map((p) => p.name).join(", ")}
                 >
-                  {item?.demo_products?.map((p) => p.name).join(', ')}
-                </span>
-              </div>
+                  {item?.demo_products?.map((p) => p.name).join(", ")}
+                </Text>
+              </Group>
             )}
             {item?.crops?.length > 0 && (
-              <div className="flex items-start gap-1">
-                <span className="font-medium text-xs text-gray-500">Crop:</span>
-                <span
-                  className="text-xs truncate max-w-[150px]"
-                  title={item?.crops?.map((c) => c.name).join(', ')}
+              <Group gap={4} wrap="nowrap" align="flex-start">
+                <Text size="xs" fw={500} c="dimmed">
+                  Crop:
+                </Text>
+                <Text
+                  size="xs"
+                  maw={150}
+                  truncate
+                  title={item?.crops?.map((c) => c.name).join(", ")}
                 >
-                  {item?.crops?.map((c) => c.name).join(', ')}
-                </span>
-              </div>
+                  {item?.crops?.map((c) => c.name).join(", ")}
+                </Text>
+              </Group>
             )}
-            <div className="flex items-start gap-1">
-              <span className="font-medium text-xs text-gray-500">Type:</span>
-              <span className="text-xs">{item?.event_type?.name}</span>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Calendar className="h-4 w-4" />
-            <div>
-              <div>{item?.date_begin}</div>
-              <div className="text-xs text-gray-400">to {item?.date_end}</div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex flex-col gap-1 items-start">
-            <Badge
-              className={`${
-                statusStyles[item?.event_stage?.name.toLowerCase()]
-              } border-0 text-[10px] capitalize`}
-            >
-              {item?.event_stage?.name}
-            </Badge>
-            <Badge
-              className={`${
-                statusStyles[item?.verified ? 'sent' : 'cancelled']
-              } border-0 text-[10px] flex items-center gap-1`}
-            >
-              {item?.verified ? (
-                <>
-                  <CheckCircle2 className="h-3 w-3" />
-                  Verified
-                </>
-              ) : (
-                <>
-                  <XCircle className="h-3 w-3" />
-                  Unverified
-                </>
-              )}
-            </Badge>
+            <Group gap={4} wrap="nowrap" align="flex-start">
+              <Text size="xs" fw={500} c="dimmed">
+                Type:
+              </Text>
+              <Text size="xs">{item?.event_type?.name}</Text>
+            </Group>
+          </Stack>
+        </Table.Td>
+        <Table.Td>
+          <Group gap="xs" wrap="nowrap" c="dimmed">
+            <Calendar size={16} style={{ flexShrink: 0 }} />
+            <Box>
+              <Text size="sm">{item?.date_begin}</Text>
+              <Text size="xs">to {item?.date_end}</Text>
+            </Box>
+          </Group>
+        </Table.Td>
+        <Table.Td>
+          <Stack gap={4} align="flex-start">
+            <StageBadge item={item} />
+            <StatusBadge
+              status={item?.verified ? "Verified" : "Unverified"}
+              size="sm"
+              leftSection={
+                item?.verified ? (
+                  <CheckCircle2 size={12} />
+                ) : (
+                  <XCircle size={12} />
+                )
+              }
+            />
             {item?.rsmAttended && (
               <Badge
-                className={`${statusStyles.sent} border-0 text-[10px] flex items-center gap-1`}
+                color="green"
+                variant="light"
+                size="sm"
+                leftSection={<Users size={12} />}
               >
-                <Users className="h-3 w-3" />
                 Attended
               </Badge>
             )}
-          </div>
-        </TableCell>
-        <TableCell>
+            {isFailed(item) && <Failed item={item} onChanged={onChanged} />}
+          </Stack>
+        </Table.Td>
+        <Table.Td>
           {item?.images && item.images.length > 0 ? (
             <Button
-              variant="ghost"
-              size="sm"
+              variant="subtle"
+              size="compact-sm"
+              leftSection={<ImageIcon size={16} />}
               onClick={toggleImages}
-              className="text-blue-600 hover:text-blue-700 p-0 h-auto"
             >
-              <ImageIcon className="h-4 w-4 mr-1" />
-              {toggleEventImages.includes(item.id) ? 'Hide' : 'Show'} (
+              {toggleEventImages.includes(item._id) ? "Hide" : "Show"} (
               {item.images.length})
             </Button>
           ) : (
-            <span className="text-xs text-gray-400">No images</span>
+            <Text size="xs" c="dimmed">
+              No images
+            </Text>
           )}
-        </TableCell>
-      </TableRow>
+        </Table.Td>
+      </Table.Tr>
 
       {/* Image Gallery Row (conditionally rendered) */}
       {item?.images &&
         item.images.length > 0 &&
-        toggleEventImages.includes(item.id) && (
-          <TableRow>
-            <TableCell colSpan={6} className="p-4 border-b">
-              <div className="flex flex-wrap gap-2">
+        toggleEventImages.includes(item._id) && (
+          <Table.Tr>
+            <Table.Td colSpan={6} p="md">
+              <Group gap="xs">
                 {item.images.map((imageUrl, index) => (
-                  <div key={index} className="relative group">
-                    <img
-                      src={imageUrl}
-                      alt={`Event image ${index + 1}`}
-                      className="w-20 h-20 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity border bg-white"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                    <div
-                      className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 rounded-md flex items-center justify-center cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                    >
-                      <Eye
-                        className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                        size={16}
-                      />
-                    </div>
-                  </div>
+                  <Image
+                    key={index}
+                    src={imageUrl}
+                    alt={`Event image ${index + 1}`}
+                    w={80}
+                    h={80}
+                    fit="cover"
+                    radius="md"
+                    style={{ cursor: "pointer" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedImage(imageUrl);
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
+                  />
                 ))}
-              </div>
-            </TableCell>
-          </TableRow>
+              </Group>
+            </Table.Td>
+          </Table.Tr>
         )}
     </>
   );
@@ -415,33 +400,53 @@ const TerritoryManagerEvents = () => {
   const [loading, setLoading] = useState(false);
   const [filterBy, setFilterBy] = useState({ stages: false });
   const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedDateRange, setSelectedDateRange] = useState<
     DateRange | undefined
   >(undefined);
-  const [toggleEventImages, setToggleEventImages] = useState<number[]>([]);
+  const [toggleEventImages, setToggleEventImages] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const fetchSalesOrders = () => {
-    dispatch(resetProducts());
-    const onSuccess = (response) => {
-      setLoading(false);
-      response.data.sort(
-        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
-      );
-      setEvents(response.data);
-    };
+  // `quiet` reloads in place, without swapping the list for a spinner.
+  // The server returns at most 200 events a page, so every page is read.
+  const fetchSalesOrders = (quiet = false) => {
+    if (!quiet) {
+      dispatch(resetProducts());
+      setLoading(true);
+    }
     const onError = () => {
       setLoading(false);
-      toast.error('Failed to fetch events', {
-        description: 'Error',
-      });
+      if (!quiet) {
+        toast.error("Failed to fetch events", {
+          description: "Error",
+        });
+      }
     };
-    setLoading(true);
-    callApi('GET', '/events/employee', null, onSuccess, onError);
+    const fetchPage = (page, previous) => {
+      callApi(
+        "GET",
+        `${RESOURCE}?limit=200&page=${page}`,
+        null,
+        (response) => {
+          const all = [...previous, ...(response.data || [])];
+          if (response.pagination?.hasMore) {
+            fetchPage(page + 1, all);
+            return;
+          }
+          setLoading(false);
+          all.sort(
+            (a, b) =>
+              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+          );
+          setEvents(all);
+        },
+        onError,
+      );
+    };
+    fetchPage(1, []);
   };
 
   useEffect(() => {
@@ -450,9 +455,12 @@ const TerritoryManagerEvents = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useQueuedRefresh(events, () => fetchSalesOrders(true));
+
   const groupByStages = () => {
     const grouped = events.reduce((acc, event) => {
-      const stageName = event.event_stage?.name || 'Unknown';
+      const stageName =
+        (isUnsynced(event) ? "" : event.event_stage?.name) || "Unknown";
       if (!acc[stageName]) {
         acc[stageName] = [];
       }
@@ -476,14 +484,14 @@ const TerritoryManagerEvents = () => {
       item?.event_type?.name
         ?.toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
-      item?.id.toString().includes(searchQuery);
+      recordRef(item).toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesDate =
       !(selectedDateRange?.from && selectedDateRange?.to) ||
       (dayjs(item?.date).valueOf() >=
-        dayjs(selectedDateRange.from).startOf('day').valueOf() &&
+        dayjs(selectedDateRange.from).startOf("day").valueOf() &&
         dayjs(item?.date).valueOf() <=
-          dayjs(selectedDateRange.to).endOf('day').valueOf());
+          dayjs(selectedDateRange.to).endOf("day").valueOf());
     return matchesSearch && matchesDate;
   };
 
@@ -497,157 +505,150 @@ const TerritoryManagerEvents = () => {
         }))
         .filter((section) => section.data.length > 0)
     : filteredEvents.length > 0
-      ? [{ title: '', data: filteredEvents }]
+      ? [{ title: "", data: filteredEvents }]
       : [];
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={() => navigate('/')}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Input
-            placeholder="Search by event name, region, territory, or ID..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full"
-          />
-        </div>
-        <div className="flex gap-2">
-          {events.length > 0 && (
-            <Dialog
-              open={filterModalVisible}
-              onOpenChange={setFilterModalVisible}
-            >
-              <DialogTrigger asChild>
-                <Button variant="outline">
-                  <Filter className="h-4 w-4 mr-2" />
-                  Filter
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Filter Events</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <DateFilter
-                    selectedRange={selectedDateRange}
-                    onSelect={setSelectedDateRange}
-                    triggerMode="input"
-                    className="w-full"
-                  />
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="groupByStages"
-                      checked={selectedFilter === 'stages'}
-                      onCheckedChange={(checked) =>
-                        setSelectedFilter(checked ? 'stages' : '')
-                      }
-                    />
-                    <Label htmlFor="groupByStages">Group by Event Stages</Label>
-                  </div>
-                </div>
-                <Button
-                  onClick={() => {
-                    setFilterBy({ stages: selectedFilter === 'stages' });
-                    setFilterModalVisible(false);
-                  }}
-                >
-                  Apply Filter
-                </Button>
-              </DialogContent>
-            </Dialog>
-          )}
-          <Button onClick={() => navigate('/add-event')} disabled={loading}>
-            Add Event
-          </Button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {groupedEvents.map((section, index) => (
-            <div key={index}>
-              {section.title && (
-                <h2 className="text-xl font-semibold mb-4">{section.title}</h2>
-              )}
-              {/* Desktop Table View */}
-              <div className="hidden md:block overflow-x-auto bg-white rounded-lg shadow border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold">ID / Name</TableHead>
-                      <TableHead className="font-semibold">Location</TableHead>
-                      <TableHead className="font-semibold">Details</TableHead>
-                      <TableHead className="font-semibold">Date</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
-                      <TableHead className="font-semibold">Images</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {section.data.map((item, idx) => (
-                      <EventsTableRow
-                        key={`desktop-${item.id}-${idx}`}
-                        item={item}
-                        toggleEventImages={toggleEventImages}
-                        setToggleEventImages={setToggleEventImages}
-                        setSelectedImage={setSelectedImage}
-                      />
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Mobile Card View */}
-              <div className="grid grid-cols-1 md:hidden gap-4 mt-4 md:mt-0">
-                {section.data.map((item, idx) => (
-                  <EventsCard
-                    key={`mobile-${item.id}-${idx}`}
-                    item={item}
-                    toggleEventImages={toggleEventImages}
-                    setToggleEventImages={setToggleEventImages}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-          {groupedEvents.length === 0 && (
-            <div className="text-center text-gray-500 mt-8">
-              No events found.
+    <Container size="xl" px={0}>
+      <PageHeader
+        title="Events"
+        back={() => navigate("/")}
+        actions={
+          <>
+            {events.length > 0 && (
               <Button
-                onClick={() => navigate('/add-event')}
-                className="mt-4 block mx-auto"
+                variant="default"
+                leftSection={<Filter size={16} />}
+                onClick={() => setFilterModalVisible(true)}
               >
-                Add Event
+                Filter
               </Button>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+            <Button
+              leftSection={<Plus size={16} />}
+              onClick={() => navigate("/add-event")}
+              disabled={loading}
+            >
+              Add Event
+            </Button>
+          </>
+        }
+      />
+
+      <Paper withBorder shadow="sm" p={{ base: "md", sm: "lg" }}>
+        <TextInput
+          mb="lg"
+          placeholder="Search by event name, region, territory, or ID..."
+          leftSection={<Search size={16} />}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.currentTarget.value)}
+        />
+
+        {loading ? (
+          <Group justify="center" h={256}>
+            <Loader />
+          </Group>
+        ) : (
+          <Stack gap="xl">
+            {groupedEvents.map((section, index) => (
+              <Box key={index}>
+                {section.title && (
+                  <Title order={4} mb="md">
+                    {section.title}
+                  </Title>
+                )}
+                {/* Desktop Table View */}
+                <Table.ScrollContainer minWidth={820} visibleFrom="md">
+                  <Table highlightOnHover>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>ID / Name</Table.Th>
+                        <Table.Th>Location</Table.Th>
+                        <Table.Th>Details</Table.Th>
+                        <Table.Th>Date</Table.Th>
+                        <Table.Th>Status</Table.Th>
+                        <Table.Th>Images</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {section.data.map((item) => (
+                        <EventsTableRow
+                          key={`desktop-${item._id}`}
+                          item={item}
+                          onChanged={() => fetchSalesOrders(true)}
+                          toggleEventImages={toggleEventImages}
+                          setToggleEventImages={setToggleEventImages}
+                          setSelectedImage={setSelectedImage}
+                        />
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
+
+                {/* Mobile Card View */}
+                <Stack gap="md" hiddenFrom="md">
+                  {section.data.map((item) => (
+                    <EventsCard
+                      key={`mobile-${item._id}`}
+                      item={item}
+                      onChanged={() => fetchSalesOrders(true)}
+                      toggleEventImages={toggleEventImages}
+                      setToggleEventImages={setToggleEventImages}
+                    />
+                  ))}
+                </Stack>
+              </Box>
+            ))}
+            {groupedEvents.length === 0 && (
+              <EmptyState
+                icon={<Calendar size={32} />}
+                title="No events found."
+                action={
+                  <Button mt="sm" onClick={() => navigate("/add-event")}>
+                    Add Event
+                  </Button>
+                }
+              />
+            )}
+          </Stack>
+        )}
+      </Paper>
+
+      <Modal
+        opened={filterModalVisible}
+        onClose={() => setFilterModalVisible(false)}
+        title={<Text fw={600}>Filter Events</Text>}
+      >
+        <Stack gap="md">
+          <DateFilter
+            selectedRange={selectedDateRange}
+            onSelect={setSelectedDateRange}
+            triggerMode="input"
+          />
+          <Checkbox
+            label="Group by Event Stages"
+            checked={selectedFilter === "stages"}
+            onChange={(e) =>
+              setSelectedFilter(e.currentTarget.checked ? "stages" : "")
+            }
+          />
+          <Button
+            onClick={() => {
+              setFilterBy({ stages: selectedFilter === "stages" });
+              setFilterModalVisible(false);
+            }}
+          >
+            Apply Filter
+          </Button>
+        </Stack>
+      </Modal>
 
       {/* Image Modal for Desktop Table */}
-      {selectedImage && (
-        <Dialog
-          open={!!selectedImage}
-          onOpenChange={() => setSelectedImage(null)}
-        >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-            <div className="relative">
-              <img
-                src={selectedImage}
-                alt="Event Image"
-                className="w-full h-auto max-h-[85vh] object-contain"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-    </div>
+      <ImagePreviewModal
+        image={selectedImage}
+        onClose={() => setSelectedImage(null)}
+      />
+    </Container>
   );
 };
 

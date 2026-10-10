@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, Container, Image, SimpleGrid, Stack, Text } from '@mantine/core';
 import { EventRMTiles } from '@/data';
 import { useSelector } from 'react-redux';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import { Attendance } from '@/assets/icons';
+import { PageHeader } from '@/components/app';
 
 const RMEvents = () => {
   const navigate = useNavigate();
@@ -24,34 +25,35 @@ const RMEvents = () => {
       : EventRMTiles;
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <h1 className="text-2xl font-bold mb-4 col-span-full">
-          Regional Manager Events
-        </h1>
+    <Container size="xl" px={0}>
+      <PageHeader title="Regional Manager Events" />
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
         {hasDailyActivityModule?.map((item, index) => (
           <Card
             key={index}
-            className={`w-full ${
-              item.path ? 'cursor-pointer hover:shadow-md' : 'opacity-50'
-            }`}
-            onClick={item.path ? () => navigate(item.path) : null}
+            withBorder
+            shadow="sm"
+            padding="lg"
+            opacity={item.path ? 1 : 0.5}
+            style={{ cursor: item.path ? 'pointer' : 'default' }}
+            onClick={item.path ? () => navigate(item.path) : undefined}
           >
-            <CardHeader className="flex flex-col items-center">
-              <img
+            <Stack align="center" gap="sm" py="sm">
+              <Image
                 src={item.icon}
                 alt={item.title}
-                className="h-24 w-24 mb-2"
+                w={96}
+                h={96}
+                fit="contain"
               />
-              <CardTitle className="text-lg text-center">
+              <Text fw={600} size="lg" ta="center">
                 {item.title}
-              </CardTitle>
-            </CardHeader>
-            <CardContent />
+              </Text>
+            </Stack>
           </Card>
         ))}
-      </div>
-    </div>
+      </SimpleGrid>
+    </Container>
   );
 };
 

@@ -1,20 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import {
+  Box,
+  Button,
+  Card,
+  Container,
+  Group,
+  Image,
+  Loader,
+  Modal,
+  Paper,
+  Stack,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-
+  Text,
+  TextInput,
+} from '@mantine/core';
 import {
-  Loader2,
   Search,
   Plus,
   Calendar,
@@ -25,292 +26,257 @@ import {
   Car,
   FileText,
 } from 'lucide-react';
-import { callApi, callServerAPI } from '@/api';
-import { priceFormatter } from '@/utils';
 import dayjs from 'dayjs';
+import { callApi } from '@/api';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { DateFilter } from '@/components/DateFilter';
-import type { DateRange } from 'react-day-picker';
-import { toast } from 'sonner';
+  errorMessage,
+  isFailed,
+  isQueued,
+  isUnsynced,
+  recordRef,
+  useQueuedRefresh,
+} from '@/api/v2';
+import { priceFormatter } from '@/utils';
+import { toast } from '@/lib/toast';
+import { DateFilter, type DateRange } from '@/components/DateFilter';
+import {
+  ConfirmModal,
+  EmptyState,
+  FailedActions,
+  PageHeader,
+  StatusBadge,
+} from '@/components/app';
 
-const statusStyles = {
-  sent: 'bg-green-100 text-green-800 hover:bg-green-200',
-  pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  canceled: 'bg-red-100 text-red-800 hover:bg-red-200',
-  cancelled: 'bg-red-100 text-red-800 hover:bg-red-200',
-  quotation: 'bg-teal-100 text-teal-800 hover:bg-teal-200',
-  approved: 'bg-green-100 text-green-800 hover:bg-green-200',
-  draft: 'bg-red-100 text-red-800 hover:bg-red-200',
-  confirmed: 'bg-green-100 text-green-800 hover:bg-green-200',
-  submitted: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  approval: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  submit: 'bg-blue-100 text-blue-800 hover:bg-blue-200',
-  'to report': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  done: 'bg-teal-100 text-teal-800 hover:bg-teal-200',
-  success: 'bg-green-100 text-green-800 hover:bg-green-200',
-  default: ' text-gray-800 hover:bg-gray-200',
+const RESOURCE = '/v2/fleet/services';
+
+interface MaintenanceItem {
+  _id: string;
+  id?: number;
+  jobId?: string;
+  vehicle?: {
+    name: string;
+    license_plate: string;
+  };
+  name?: string;
+  cost: number;
+  status?: string;
+  odooStatus?: string;
+  syncError?: string;
+  url?: string;
+  date: string;
+}
+
+interface MaintenanceItemProps {
+  item: MaintenanceItem;
+  onCancel: (item: MaintenanceItem) => void;
+  onEdit: (item: MaintenanceItem) => void;
+  onChanged: () => void;
+  onViewImage: (url: string) => void;
+}
+
+// A record still waiting in the queue can be cancelled; once it is in Odoo,
+// only while Odoo has it as `done`.
+const canCancel = (item: MaintenanceItem) =>
+  isQueued(item) ||
+  (!isUnsynced(item) && item.odooStatus?.toLowerCase() === 'done');
+
+// Our status always; Odoo's own state once the record is there.
+const Statuses = ({
+  item,
+  size,
+  align,
+}: {
+  item: MaintenanceItem;
+  size?: string;
+  align?: string;
+}) => (
+  <Stack gap={4} align={align}>
+    <StatusBadge status={item.status} size={size} />
+    {!isUnsynced(item) && <StatusBadge status={item.odooStatus} size={size} />}
+  </Stack>
+);
+
+const Actions = ({
+  item,
+  onCancel,
+  onEdit,
+  onChanged,
+  onViewImage,
+  card,
+}: MaintenanceItemProps & { card?: boolean }) => {
+  const view = item.url && (
+    <Button
+      variant="default"
+      size={card ? 'sm' : 'xs'}
+      leftSection={<ImageIcon size={card ? 16 : 14} />}
+      onClick={() => onViewImage(item.url)}
+    >
+      View
+    </Button>
+  );
+
+  if (isFailed(item)) {
+    return (
+      <Stack gap="xs" align={card ? 'stretch' : 'flex-start'}>
+        {view}
+        <FailedActions
+          item={item}
+          resource={RESOURCE}
+          onEdit={() => onEdit(item)}
+          onChanged={onChanged}
+        />
+      </Stack>
+    );
+  }
+
+  return (
+    <Group gap="xs" wrap="nowrap" grow={card}>
+      {view}
+      <Button
+        color="red"
+        variant="light"
+        size={card ? 'sm' : 'xs'}
+        leftSection={card ? <X size={16} /> : undefined}
+        onClick={() => onCancel(item)}
+        disabled={!canCancel(item)}
+      >
+        Cancel
+      </Button>
+    </Group>
+  );
 };
 
 // Mobile Card Component
-const MaintenanceCard = ({
-  item,
-  onDeleteMaintenance,
-  onViewImage,
-}: {
-  item: {
-    id: number;
-    vehicle: {
-      name: string;
-      license_plate: string;
-    };
-    cost: number;
-    createdAt: string;
-    status?: string;
-    odooStatus?: string;
-    name?: string;
-    url?: string;
-    date: string;
-  };
-  onDeleteMaintenance: (id: number) => void;
-  onViewImage: (url: string) => void;
-}) => {
+const MaintenanceCard = (props: MaintenanceItemProps) => {
+  const { item } = props;
   return (
-    <Card className="hover:shadow-lg transition-shadow duration-200">
-      <CardContent className="p-4 space-y-3">
-        {/* Header with Vehicle and Cost */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <Car className="h-4 w-4 text-blue-600" />
-              <h3 className="font-semibold text-base">{item.vehicle.name}</h3>
-            </div>
-            <p className="text-xs text-gray-500 ml-6">
-              {item.vehicle.license_plate}
-            </p>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-medium text-gray-500">PKR</span>
-              <span className="font-medium text-green-600">
+    <Card withBorder padding="md">
+      <Stack gap="sm">
+        <Group justify="space-between" align="flex-start" wrap="nowrap">
+          <Box>
+            <Group gap="xs" wrap="nowrap">
+              <Car size={16} color="var(--mantine-color-blue-6)" />
+              <Text fw={600}>{item.vehicle?.name}</Text>
+            </Group>
+            <Text size="xs" c="dimmed" ml={24}>
+              {item.vehicle?.license_plate}
+            </Text>
+            <Group gap={6} mt={4}>
+              <Text size="xs" fw={500} c="dimmed">
+                PKR
+              </Text>
+              <Text fw={500} c="green">
                 {priceFormatter(item.cost)}
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1 items-end">
-            <Badge
-              className={`${
-                statusStyles[item.status?.toLowerCase()]
-              } border-0 text-xs capitalize`}
-            >
-              {item.status || 'N/A'}
-            </Badge>
-            <Badge
-              className={`${
-                statusStyles[item.odooStatus?.toLowerCase()]
-              } border-0 text-xs capitalize`}
-            >
-              {item.odooStatus || 'N/A'}
-            </Badge>
-          </div>
-        </div>
+              </Text>
+            </Group>
+          </Box>
+          <Statuses item={item} size="sm" align="flex-end" />
+        </Group>
 
-        {/* ID and Date */}
-        <div className="space-y-1 text-sm text-gray-600">
-          <div className="flex items-center gap-2">
-            <Hash className="h-4 w-4" />
-            <span>#{item.id}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            <span>{dayjs(item.date).format('DD/MM/YYYY')}</span>
-          </div>
-        </div>
+        <Stack gap={4}>
+          <Group gap="xs" c="dimmed">
+            <Hash size={16} />
+            <Text size="sm">{recordRef(item)}</Text>
+          </Group>
+          <Group gap="xs" c="dimmed">
+            <Calendar size={16} />
+            <Text size="sm">{dayjs(item.date).format('DD/MM/YYYY')}</Text>
+          </Group>
+        </Stack>
 
-        {/* Description */}
         {item.name && (
-          <div className="flex items-start gap-2 text-sm">
-            <FileText className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
-            <p className="text-gray-600 line-clamp-2">{item.name}</p>
-          </div>
+          <Group gap="xs" align="flex-start" wrap="nowrap" c="dimmed">
+            <FileText size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+            <Text size="sm" lineClamp={2}>
+              {item.name}
+            </Text>
+          </Group>
         )}
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-2 border-t">
-          {item.url && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onViewImage(item.url)}
-              className="flex-1"
-            >
-              <ImageIcon className="h-4 w-4 mr-1" />
-              View
-            </Button>
-          )}
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => onDeleteMaintenance(item.id)}
-            disabled={item.odooStatus?.toLowerCase() !== 'done'}
-            className="flex-1"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Cancel
-          </Button>
-        </div>
-      </CardContent>
+        <Actions {...props} card />
+      </Stack>
     </Card>
   );
 };
 
 // Desktop Table Row Component
-const MaintenanceRow = ({
-  item,
-  onDeleteMaintenance,
-  onViewImage,
-}: {
-  item: {
-    id: number;
-    vehicle: {
-      name: string;
-      license_plate: string;
-    };
-    cost: number;
-    createdAt: string;
-    status?: string;
-    odooStatus?: string;
-    name?: string;
-    url?: string;
-    date: string;
-  };
-  onDeleteMaintenance: (id: number) => void;
-  onViewImage: (url: string) => void;
-}) => {
+const MaintenanceRow = (props: MaintenanceItemProps) => {
+  const { item } = props;
   return (
-    <TableRow className="hover: transition-colors">
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Hash className="h-4 w-4 text-gray-400" />
-          <span className="font-medium">#{item.id}</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Car className="h-4 w-4 text-blue-600" />
-          <div>
-            <div className="font-medium">{item.vehicle.name}</div>
-            <div className="text-xs text-gray-500">
-              {item.vehicle.license_plate}
-            </div>
-          </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-gray-500">PKR</span>
-          <span className="font-semibold text-green-600">
+    <Table.Tr>
+      <Table.Td>
+        <Text fw={500}>{recordRef(item)}</Text>
+      </Table.Td>
+      <Table.Td>
+        <Group gap="xs" wrap="nowrap">
+          <Car size={16} color="var(--mantine-color-blue-6)" />
+          <Box>
+            <Text size="sm" fw={500}>
+              {item.vehicle?.name}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {item.vehicle?.license_plate}
+            </Text>
+          </Box>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap={6} wrap="nowrap">
+          <Text size="xs" fw={500} c="dimmed">
+            PKR
+          </Text>
+          <Text fw={600} c="green">
             {priceFormatter(item.cost)}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-start gap-2">
-          <Wrench className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-          <span className="text-sm line-clamp-2">
-            {item.name || 'No description'}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <Calendar className="h-4 w-4" />
-          <div>
-            <div>{dayjs(item.date).format('DD/MM/YYYY')}</div>
-          </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex flex-col gap-1">
-          <Badge
-            className={`${
-              statusStyles[item.status?.toLowerCase()]
-            } border-0 w-fit capitalize`}
-          >
-            {item.status || 'N/A'}
-          </Badge>
-          <Badge
-            className={`${
-              statusStyles[item.odooStatus?.toLowerCase()]
-            } border-0 w-fit capitalize`}
-          >
-            {item.odooStatus || 'N/A'}
-          </Badge>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex gap-2">
-          {item.url && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onViewImage(item.url)}
-            >
-              <ImageIcon className="h-4 w-4 mr-1" />
-              View
-            </Button>
-          )}
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => onDeleteMaintenance(item.id)}
-            disabled={item.odooStatus?.toLowerCase() !== 'done'}
-          >
-            Cancel
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
+          </Text>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm" lineClamp={2}>
+          {item.name || 'No description'}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm" c="dimmed">
+          {dayjs(item.date).format('DD/MM/YYYY')}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        <Statuses item={item} />
+      </Table.Td>
+      <Table.Td maw={320}>
+        <Actions {...props} />
+      </Table.Td>
+    </Table.Tr>
   );
 };
 
 const Maintenance = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [serviceData, setServiceData] = useState([]);
+  const [serviceData, setServiceData] = useState<MaintenanceItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateRange, setSelectedDateRange] = useState<
     DateRange | undefined
   >(undefined);
-  const [toDeleteId, setToDeleteId] = useState(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [loadingDelete, setLoadingDelete] = useState(false);
+  const [toCancel, setToCancel] = useState<MaintenanceItem | null>(null);
+  const [loadingCancel, setLoadingCancel] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  const fetchServiceData = async () => {
-    const onSuccess = (response) => {
-      const sortedData = response.data.sort(
-        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
-      );
-      setServiceData(sortedData);
-      setLoading(false);
-    };
-    const onError = () => {
-      setLoading(false);
-      toast.error('Failed to fetch maintenance records');
-    };
-
-    setLoading(true);
+  // `quiet` reloads in place, without swapping the table for a spinner.
+  const fetchServiceData = (quiet = false) => {
+    if (!quiet) setLoading(true);
     callApi(
       'GET',
-      '/fleet/services?category=service',
+      `${RESOURCE}?category=service&limit=200`,
       null,
-      onSuccess,
-      onError,
+      (response) => {
+        setLoading(false);
+        setServiceData(response.data || []);
+      },
+      () => {
+        setLoading(false);
+        if (!quiet) toast.error('Failed to fetch maintenance records');
+      },
     );
   };
 
@@ -318,9 +284,11 @@ const Maintenance = () => {
     fetchServiceData();
   }, []);
 
+  useQueuedRefresh(serviceData, () => fetchServiceData(true));
+
   const filteredServiceData = serviceData.filter((item) => {
     const matchesSearch =
-      `${item?.id} ${item?.vehicle?.name} ${item?.vehicle?.license_plate} ${item?.cost} ${item?.name}`
+      `${recordRef(item)} ${item?.vehicle?.name} ${item?.vehicle?.license_plate} ${item?.cost} ${item?.name}`
         .toLowerCase()
         .includes(searchQuery.toLowerCase());
 
@@ -333,225 +301,158 @@ const Maintenance = () => {
     return matchesSearch && matchesDate;
   });
 
-  const onConfirmDelete = () => {
-    if (toDeleteId === null) return;
-    const findRecord = serviceData.find((item) => item.id === toDeleteId);
+  const onConfirmCancel = () => {
+    if (!toCancel) return;
 
-    if (!findRecord) {
-      toast.error('Maintenance record not found');
-      return;
-    }
+    setLoadingCancel(true);
+    callApi(
+      'POST',
+      `${RESOURCE}/${toCancel._id}/cancel`,
+      {},
+      () => {
+        toast.success('Maintenance record cancelled');
+        setLoadingCancel(false);
+        setToCancel(null);
+        fetchServiceData(true);
+      },
+      (error) => {
+        setLoadingCancel(false);
+        setToCancel(null);
+        toast.error(
+          errorMessage(
+            error,
+            'Failed to cancel maintenance record. Please try again.',
+          ),
+        );
+      },
+    );
+  };
 
-    const data: {
-      fleet_id: number;
-      company_id: number;
-      service_type_id: number;
-    } = {
-      fleet_id: toDeleteId,
-      company_id: findRecord.company_id,
-      service_type_id: findRecord.service_type_id,
-    };
-
-    const onSuccess = () => {
-      callApi(
-        'PATCH',
-        '/fleet/service/cancel',
-        {
-          id: toDeleteId,
-          service_type_id: findRecord.service_type_id,
-          company_id: findRecord.company_id,
-        },
-        () => {
-          toast.success('Maintenance record cancelled successfully');
-          fetchServiceData();
-          setDeleteDialogOpen(false);
-          setToDeleteId(null);
-          setLoadingDelete(false);
-        },
-        () => {
-          toast.error('Failed to cancel maintenance record. Please try again.');
-          setLoadingDelete(false);
-        },
-      );
-    };
-
-    const onError = (error) => {
-      setDeleteDialogOpen(false);
-      setToDeleteId(null);
-      setLoadingDelete(false);
-      toast.error(
-        error?.message ||
-          'Failed to cancel maintenance record. Please try again.',
-      );
-    };
-
-    setLoadingDelete(true);
-    callServerAPI('POST', '/delete/fleet', { data }, onSuccess, onError);
+  const rowProps = {
+    onCancel: setToCancel,
+    onEdit: (item: MaintenanceItem) =>
+      navigate('/add-maintenance', { state: { record: item } }),
+    onChanged: () => fetchServiceData(true),
+    onViewImage: setSelectedImage,
   };
 
   return (
-    <div className="min-h-screen  p-4">
-      <div className="container mx-auto max-w-7xl">
-        <Card className="shadow-lg border-0">
-          <CardHeader className="bg-white border-b">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <CardTitle className="text-2xl font-bold">
-                Maintenance Records
-              </CardTitle>
-              <Button onClick={() => navigate('/add-maintenance')}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Maintenance
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6">
-            {/* Search Bar */}
-            <div className="mb-6 flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search by ID, vehicle, or cost..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <DateFilter
-                selectedRange={selectedDateRange}
-                onSelect={setSelectedDateRange}
-              />
-            </div>
+    <Container size="xl" px={0}>
+      <PageHeader
+        title="Maintenance Records"
+        actions={
+          <Button
+            leftSection={<Plus size={16} />}
+            onClick={() => navigate('/add-maintenance')}
+          >
+            Add Maintenance
+          </Button>
+        }
+      />
 
-            {loading ? (
-              <div className="flex justify-center items-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-              </div>
-            ) : filteredServiceData.length === 0 ? (
-              <div className="text-center py-12">
-                <Wrench className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
-                  {searchQuery
-                    ? 'No maintenance records found matching your search.'
-                    : 'No maintenance records found.'}
-                </p>
-                <p className="text-gray-400 text-sm mt-2">
-                  {!searchQuery &&
-                    'Add your first maintenance record to get started.'}
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Desktop Table View */}
-                <div className="hidden md:block overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="font-semibold">ID</TableHead>
-                        <TableHead className="font-semibold">Vehicle</TableHead>
-                        <TableHead className="font-semibold">Cost</TableHead>
-                        <TableHead className="font-semibold">Service</TableHead>
-                        <TableHead className="font-semibold">Date</TableHead>
-                        <TableHead className="font-semibold">Status</TableHead>
-                        <TableHead className="font-semibold">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredServiceData.map((item) => (
-                        <MaintenanceRow
-                          key={item.id}
-                          item={item}
-                          onDeleteMaintenance={(id) => {
-                            setToDeleteId(id);
-                            setDeleteDialogOpen(true);
-                          }}
-                          onViewImage={setSelectedImage}
-                        />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+      <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'lg' }}>
+        <Group gap="sm" mb="lg" wrap="nowrap">
+          <TextInput
+            flex={1}
+            placeholder="Search by ID, vehicle, or cost..."
+            leftSection={<Search size={16} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.currentTarget.value)}
+          />
+          <DateFilter
+            selectedRange={selectedDateRange}
+            onSelect={setSelectedDateRange}
+          />
+        </Group>
 
-                {/* Mobile Card View */}
-                <div className="md:hidden space-y-4">
+        {loading ? (
+          <Group justify="center" h={256}>
+            <Loader />
+          </Group>
+        ) : filteredServiceData.length === 0 ? (
+          <EmptyState
+            icon={<Wrench size={32} />}
+            title={
+              searchQuery
+                ? 'No maintenance records found matching your search.'
+                : 'No maintenance records found.'
+            }
+            description={
+              !searchQuery &&
+              'Add your first maintenance record to get started.'
+            }
+          />
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <Table.ScrollContainer minWidth={900} visibleFrom="md">
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>ID</Table.Th>
+                    <Table.Th>Vehicle</Table.Th>
+                    <Table.Th>Cost</Table.Th>
+                    <Table.Th>Service</Table.Th>
+                    <Table.Th>Date</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th>Actions</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
                   {filteredServiceData.map((item) => (
-                    <MaintenanceCard
-                      key={item.id}
-                      item={item}
-                      onDeleteMaintenance={(id) => {
-                        setToDeleteId(id);
-                        setDeleteDialogOpen(true);
-                      }}
-                      onViewImage={setSelectedImage}
-                    />
+                    <MaintenanceRow key={item._id} item={item} {...rowProps} />
                   ))}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+
+            {/* Mobile Card View */}
+            <Stack gap="md" hiddenFrom="md">
+              {filteredServiceData.map((item) => (
+                <MaintenanceCard key={item._id} item={item} {...rowProps} />
+              ))}
+            </Stack>
+          </>
+        )}
+      </Paper>
 
       {/* Cancel Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancel Maintenance Record</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to cancel maintenance record #{toDeleteId}?
-              This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteDialogOpen(false);
-                setToDeleteId(null);
-              }}
-              disabled={loadingDelete}
-            >
-              No, Keep It
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={onConfirmDelete}
-              disabled={loadingDelete}
-            >
-              {loadingDelete ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Cancelling...
-                </>
-              ) : (
-                'Yes, Cancel'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmModal
+        opened={!!toCancel}
+        onClose={() => setToCancel(null)}
+        onConfirm={onConfirmCancel}
+        title="Cancel Maintenance Record"
+        confirmLabel="Yes, Cancel"
+        cancelLabel="No, Keep It"
+        loading={loadingCancel}
+      >
+        Are you sure you want to cancel maintenance record{' '}
+        {toCancel ? recordRef(toCancel) : ''}? This action cannot be undone.
+      </ConfirmModal>
 
       {/* Image View Dialog */}
       {selectedImage && (
-        <Dialog
-          open={!!selectedImage}
-          onOpenChange={() => setSelectedImage(null)}
+        <Modal
+          opened={!!selectedImage}
+          onClose={() => setSelectedImage(null)}
+          size="xl"
+          padding="xs"
+          centered
         >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-2">
-            <div className="relative">
-              <img
-                src={selectedImage}
-                alt="Maintenance receipt"
-                className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
-                onError={() => {
-                  toast.error('Failed to load image');
-                  setSelectedImage(null);
-                }}
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+          <Image
+            src={selectedImage}
+            alt="Maintenance receipt"
+            fit="contain"
+            mah="80vh"
+            radius="md"
+            onError={() => {
+              toast.error('Failed to load image');
+              setSelectedImage(null);
+            }}
+          />
+        </Modal>
       )}
-    </div>
+    </Container>
   );
 };
 

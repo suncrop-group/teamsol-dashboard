@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import {
@@ -9,29 +9,106 @@ import {
   setNewProducts,
   setOrderInitialDetails,
 } from '@/redux/slices/OrderCreationSlice';
-import { callApi, callServerAPI } from '@/api';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
 import { priceFormatter } from '@/utils';
 import Loader from '@/components/Loader';
-import { Input } from '@/components/ui/input';
 import {
+  ActionIcon,
+  Alert,
+  Button,
+  Card,
+  Container,
+  Grid,
+  Group,
+  Paper,
   Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@/components/ui/select';
-import { toast } from 'sonner'; // Or your toast system
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useNavigate } from 'react-router-dom';
+  SimpleGrid,
+  Stack,
+  Table,
+  Text,
+  TextInput,
+} from '@mantine/core';
+import { toast } from '@/lib/toast';
+import { useLocation, useNavigate } from 'react-router-dom';
 import SelectBox from '@/components/Select';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/app';
 import { Trash2Icon } from 'lucide-react';
 
+// Mantine selects work with string values, while this form keeps the original
+// ids (numbers) in state and compares them strictly, so the original value of
+// the chosen option is handed back.
+const IdSelect = ({ data, value, onChange, ...props }) => {
+  const options: { value: string; label: string }[] = [];
+  (data || []).forEach((item) => {
+    const optionValue = String(item.value);
+    if (!options.some((option) => option.value === optionValue)) {
+      options.push({ value: optionValue, label: String(item.label ?? '') });
+    }
+  });
+
+  return (
+    <Select
+      data={options}
+      value={
+        value === undefined || value === null || value === ''
+          ? null
+          : String(value)
+      }
+      onChange={(selected) => {
+        const found = (data || []).find(
+          (item) => String(item.value) === selected,
+        );
+        if (found) onChange(found.value);
+      }}
+      allowDeselect={false}
+      searchable
+      nothingFoundMessage="No items to display"
+      {...props}
+    />
+  );
+};
+
+const RESOURCE = '/v2/sales';
+
+// Form fields the server can blame by name; anything else goes in the alert.
+const HEADER_FIELDS = [
+  'territory_id',
+  'partner_id',
+  'delivery_id',
+  'warehouse_id',
+  'policy_type',
+];
+
+// A read that answers null instead of failing.
+const read = (endPoint: string) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  new Promise<any>((resolve) =>
+    callApi('GET', endPoint, null, resolve, () => resolve(null)),
+  );
+
+// A line of a saved order, as the server returns it.
+interface SaleLine {
+  product_template_id: number;
+  policy_id: number;
+  ref_policy_id?: number | null;
+  product_packaging_id: number;
+  product_packaging_qty: number;
+  qty: number;
+  price_unit: number;
+  discount: number;
+}
+
 const AddOrders = () => {
-  const [policyTypeFirst, setPolicyTypeFirst] = useState('');
+  // A failed order opened from the list to be fixed and sent again.
+  const record = useLocation().state?.record;
+
+  const [policyTypeFirst, setPolicyTypeFirst] = useState(
+    record?.policy_type || '',
+  );
   const [policyTypesData, setPolicyTypesData] = useState([]);
-  const [territory, setTerritory] = useState('');
-  const [customerFirst, setCustomerFirst] = useState('');
+  const [territory, setTerritory] = useState(record?.territory_id || '');
+  const [customerFirst, setCustomerFirst] = useState(record?.partner_id || '');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [customersData, setCustomersData] = useState([]);
   const [deliveryAddressesData, setDeliveryAddressesData] = useState([]);
@@ -44,7 +121,6 @@ const AddOrders = () => {
     useState(false);
   const { policyType, policies, customer, referencePolicies, warehouse } =
     useSelector(selectOrderInitialDetails);
-  const { company } = useSelector(selectUser);
   const otherProducts = useSelector(getAddedProducts);
   const [packingsData, setPackingsData] = useState<
     { label: string; value: number }[]
@@ -70,6 +146,112 @@ const AddOrders = () => {
   const navigation = useNavigate();
   const user = useSelector(selectUser);
   const dispatch = useDispatch();
+
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two orders.
+  const requestId = useRef(newRequestId());
+
+  // Edit mode: values of the record still to be put into the form. Each is
+  // applied once, when the list it belongs to has loaded, in place of the
+  // default the form would pick.
+  const prefill = useRef({
+    delivery: record?.delivery_id ?? null,
+    // All the record's lines, until the policies are known.
+    lines: (record?.lines as SaleLine[]) || null,
+    // The first line goes back into the line editor, a step at a time.
+    line: null as SaleLine | null,
+    packs: null as number | null,
+    packing: null as number | null,
+  });
+
+  // The user took over the line editor: stop filling it from the record.
+  const stopLinePrefill = () => {
+    prefill.current.line = null;
+    prefill.current.packs = null;
+    prefill.current.packing = null;
+  };
+
+  useEffect(() => {
+    if (record) dispatch(resetProducts());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Put the record's lines back into the form once the policies are known:
+   * the first into the line editor (through the same lookups as a line
+   * picked by hand, so its price and discount are current), the others into
+   * the added products.
+   */
+  const applyRecordLines = async (details: {
+    policies: { policy_id: number; code: string }[];
+    referencePolicies?: { policy_id: number; code: string }[];
+    policyType?: { type: string };
+  }) => {
+    const lines = prefill.current.lines;
+    if (!lines?.length) return;
+    prefill.current.lines = null;
+
+    const [first, ...others] = lines;
+
+    if (
+      details.policies.some((policy) => policy.policy_id === first.policy_id)
+    ) {
+      prefill.current.line = first;
+      setOrder((prev) => ({ ...prev, policy: first.policy_id }));
+    }
+
+    if (!others.length) return;
+
+    const policyIds = [...new Set(others.map((line) => line.policy_id))];
+    const productLists = await Promise.all(
+      policyIds.map((id) =>
+        read(
+          `/products/get?policy=${id}&policyType=${details.policyType?.type}`,
+        ),
+      ),
+    );
+    const names: { id: number; name: string }[] = productLists.flatMap(
+      (res) => res?.products || [],
+    );
+    const codeOf = (list: { policy_id: number; code: string }[], id: number) =>
+      list?.find((policy) => policy.policy_id === id)?.code || '';
+
+    others.forEach((line) => {
+      const packs = Number(line.product_packaging_qty) || 1;
+      dispatch(
+        setNewProducts({
+          policy: line.policy_id,
+          refPolicy: line.ref_policy_id || undefined,
+          product: line.product_template_id,
+          packing: line.product_packaging_id,
+          noOfPacks: String(line.product_packaging_qty),
+          unit: String(Number(line.qty) / packs),
+          unitPrice: { price_unit: String(line.price_unit) },
+          discount: `${line.discount}%`,
+          total:
+            Number(line.qty) *
+            Number(line.price_unit) *
+            (1 - Number(line.discount) / 100),
+          productName:
+            names.find((product) => product.id === line.product_template_id)
+              ?.name || `Product #${line.product_template_id}`,
+          refPolicyName: line.ref_policy_id
+            ? codeOf(details.referencePolicies, Number(line.ref_policy_id))
+            : '',
+          policyName: codeOf(details.policies, line.policy_id),
+          id: Math.random().toString(36).substring(7) + Math.random() * 1000,
+        }),
+      );
+    });
+  };
 
   const territoriesData =
     user?.territories?.map((t) => ({
@@ -137,6 +319,7 @@ const AddOrders = () => {
           };
 
           dispatch(setOrderInitialDetails(mergedData));
+          applyRecordLines(mergedData);
         },
         () => {
           dispatch(setOrderInitialDetails({}));
@@ -147,6 +330,7 @@ const AddOrders = () => {
       );
     } else {
       dispatch(setOrderInitialDetails(data));
+      applyRecordLines(data);
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,7 +365,14 @@ const AddOrders = () => {
               value: warehouse.id,
             })),
           );
-          setWarehouseFirst(warehouses[0]?.id || '');
+          // Edit mode: the record's warehouse while on its own territory.
+          const recordWarehouse =
+            record && territory === record.territory_id
+              ? warehouses.find(
+                  (warehouse) => warehouse.id === record.warehouse_id,
+                )
+              : null;
+          setWarehouseFirst(recordWarehouse?.id || warehouses[0]?.id || '');
         },
         () => {
           setCustomersData([]);
@@ -195,6 +386,7 @@ const AddOrders = () => {
   useEffect(() => {
     if (customerFirst && customers.length > 0) {
       const selectedCustomer = customers.find((c) => c.id === customerFirst);
+      if (!selectedCustomer) return;
       if (!selectedCustomer?.delivery_address?.length) {
         setIsDeliveryAddressAvailable(false);
         setDeliveryAddress(selectedCustomer.name);
@@ -224,17 +416,12 @@ const AddOrders = () => {
   useEffect(() => {
     if (customerFirst && policyTypeFirst) {
       setLoading(true);
-      callServerAPI(
-        'POST',
-        `/get/advance/policy/balance`,
-        {
-          data: {
-            partner_id: customerFirst,
-            policy_type: policyTypeFirst,
-          },
-        },
+      callApi(
+        'GET',
+        `/v2/lookups/policy-balance?partner_id=${customerFirst}&policy_type=${policyTypeFirst}`,
+        null,
         (res: { data: { expense: Record<string, unknown>[] } }) => {
-          setPoliciesData(res?.data?.expense);
+          setPoliciesData(res?.data?.expense || []);
           setLoading(false);
         },
         () => {
@@ -246,8 +433,14 @@ const AddOrders = () => {
 
   useEffect(() => {
     if (deliveryAddressesData.length > 0) {
+      const recordAddress = deliveryAddressesData.find(
+        (address) => address.value === prefill.current.delivery,
+      );
+      prefill.current.delivery = null;
       setDeliveryAddress(
-        deliveryAddressesData[deliveryAddressesData.length - 1].value,
+        recordAddress
+          ? recordAddress.value
+          : deliveryAddressesData[deliveryAddressesData.length - 1].value,
       );
     }
   }, [deliveryAddressesData]);
@@ -340,18 +533,15 @@ const AddOrders = () => {
       return;
     }
 
-    const data = {
+    const body = {
       partner_id: Number(customer.id),
       territory_id: Number(customer.territory_id),
       policy_type: policyType.type,
-      employee_id: Number(user.id),
-      company_id: Number(company.id),
       warehouse_id: Number(warehouse.id),
       delivery_id:
         !isNaN(Number(deliveryAddress)) && Number(deliveryAddress) !== 0
           ? Number(deliveryAddress)
           : Number(customer.id),
-      order_id: 0,
       lines: [
         {
           product_template_id: Number(order.product),
@@ -385,79 +575,48 @@ const AddOrders = () => {
           }),
         ),
       ],
+      total:
+        otherProducts.reduce(
+          (
+            acc: number,
+            product: {
+              total: number;
+            },
+          ) => acc + product.total,
+          0,
+        ) + productTotal,
     };
 
-    const onSuccessDBOrder = () => {
-      toast.success('Order added successfully');
+    const onSuccess = () => {
+      toast.success(
+        record ? 'Order updated and queued' : 'Order saved and queued',
+      );
       dispatch(resetProducts());
       navigation('/sales');
       setLoading(false);
     };
 
-    const onErrorOrder = () => {
+    const onError = (error) => {
       setLoading(false);
-      toast.error('Error adding order to the database');
+      const message = errorMessage(error, 'Error adding order');
+      setFieldError({ field: error?.field, message });
+      toast.error(message);
     };
 
-    const onOrderOdooSuccess = (response: {
-      data: {
-        message: {
-          order_id: number;
-          order_sequence: string;
-        };
-      };
-    }) => {
-      const { order_id, order_sequence } = response.data.message;
-      if (!order_id || !order_sequence) {
-        toast.error('Error adding order');
-        return;
-      }
-
+    setLoading(true);
+    setFieldError(null);
+    // The server saves the order and queues it for Odoo.
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
       callApi(
         'POST',
-        `/sales`,
-        {
-          ...data,
-          order_id: order_id,
-          status: 'sent',
-          total:
-            otherProducts.reduce(
-              (
-                acc: number,
-                product: {
-                  total: number;
-                },
-              ) => acc + product.total,
-              0,
-            ) + productTotal,
-          order_sequence: order_sequence,
-        },
-        onSuccessDBOrder,
-        onErrorOrder,
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
       );
-    };
-
-    const onError = () => {
-      toast.error('Error adding order in Odoo');
-      setLoading(false);
-    };
-    setLoading(true);
-    callServerAPI(
-      'POST',
-      '/post/order',
-      {
-        data: {
-          ...data,
-          partner_id: Number(customer.id),
-          delivery_id:
-            !isNaN(Number(deliveryAddress)) && Number(deliveryAddress) !== 0
-              ? Number(deliveryAddress)
-              : Number(customer.id),
-        },
-      },
-      onOrderOdooSuccess,
-      onError,
-    );
+    }
   };
 
   const handleAddNewProduct = () => {
@@ -520,6 +679,24 @@ const AddOrders = () => {
           total: 0,
           product: -1,
         }));
+
+        // Edit mode: carry on with the record's first line.
+        const line = prefill.current.line;
+        if (line) {
+          prefill.current.line = null;
+          if (
+            policy.products?.some(
+              (product) => product.id === line.product_template_id,
+            )
+          ) {
+            prefill.current.packs = Number(line.product_packaging_qty) || null;
+            prefill.current.packing = line.product_packaging_id;
+            setOrder((prev) => ({
+              ...prev,
+              product: line.product_template_id,
+            }));
+          }
+        }
       };
 
       const onError = () => {
@@ -573,6 +750,20 @@ const AddOrders = () => {
           return;
         }
         setReferencePoliciesData(filteredReferencePolicies);
+
+        // Edit mode: the record's first line carries on with its ref. policy.
+        const line = prefill.current.line;
+        if (line) {
+          const refPolicy = filteredReferencePolicies.find(
+            (policy: { policy_id: number }) =>
+              policy.policy_id === Number(line.ref_policy_id),
+          );
+          if (refPolicy) {
+            setOrder((prev) => ({ ...prev, refPolicy: refPolicy.policy_id }));
+          } else {
+            prefill.current.line = null;
+          }
+        }
       };
 
       const onError = () => {
@@ -633,12 +824,16 @@ const AddOrders = () => {
         const price_unit = data.expense[0];
         const qty = data.expense[0].packing_units[0].qty;
 
+        // Edit mode: the record's number of packs instead of the default 1.
+        const packs = prefill.current.packs;
+        prefill.current.packs = null;
+
         setOrder((prev) => ({
           ...prev,
           discount: discount,
           unit: qty,
           unitPrice: price_unit,
-          noOfPacks: '1',
+          noOfPacks: packs ? String(packs) : '1',
         }));
       };
 
@@ -646,16 +841,10 @@ const AddOrders = () => {
         toast.error('Error fetching discount details');
       };
 
-      callServerAPI(
-        'POST',
-        '/policy/discount',
-        {
-          data: {
-            partner_id: customer.id,
-            policy_id: order?.policy,
-            product_tmpl_id: order?.product,
-          },
-        },
+      callApi(
+        'GET',
+        `/v2/lookups/policy-discount?partner_id=${customer.id}&policy_id=${order?.policy}&product_tmpl_id=${order?.product}`,
+        null,
         onSuccess,
         onError,
       );
@@ -701,7 +890,15 @@ const AddOrders = () => {
   // Set the default packing
   useEffect(() => {
     if (packingsData.length > 0) {
-      handleChange('packing', packingsData[0].value.toString());
+      // Edit mode: the record's packing instead of the first one.
+      const recordPacking = packingsData.find(
+        (packing) => packing.value === prefill.current.packing,
+      );
+      prefill.current.packing = null;
+      handleChange(
+        'packing',
+        (recordPacking || packingsData[0]).value.toString(),
+      );
       setLoading(false);
     }
   }, [packingsData]);
@@ -724,6 +921,9 @@ const AddOrders = () => {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.noOfPacks]);
+
+  const errorFor = (field: string) =>
+    fieldError?.field === field ? fieldError.message : undefined;
 
   const productsData =
     products?.map(
@@ -750,162 +950,155 @@ const AddOrders = () => {
     })) || [];
 
   return (
-    <>
+    <Container size="md" px={0} pos="relative">
       <Loader loading={loading} />
-      <Card className="p-6 my-8 bg-white mx-auto w-full md:w-1/2">
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold">
-            Add Sale Order
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-6">
-            {/* Territory */}
-            <div className="w-full">
-              <label className="block mb-1 font-medium">Territory</label>
-              <Select value={territory} onValueChange={setTerritory}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select the Territory" />
-                </SelectTrigger>
-                <SelectContent>
-                  {territoriesData.map(({ label, value }) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <PageHeader title={record ? 'Edit Sale Order' : 'Add Sale Order'} />
+      <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'lg' }}>
+        {fieldError && !HEADER_FIELDS.includes(fieldError.field) && (
+          <Alert color="red" variant="light" mb="md">
+            {fieldError.message}
+          </Alert>
+        )}
+        <Grid gutter="md">
+          {/* Territory */}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <IdSelect
+              label="Territory"
+              placeholder="Select the Territory"
+              data={territoriesData}
+              value={territory}
+              onChange={setTerritory}
+              error={errorFor('territory_id')}
+            />
+          </Grid.Col>
 
-            {/* Customer */}
-            <div>
-              <label className="block mb-1 font-medium">Customer</label>
-              <Select value={customerFirst} onValueChange={setCustomerFirst}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select the customer" />
-                </SelectTrigger>
-                <SelectContent className="w-full">
-                  {customersData.map(({ label, value }) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          {/* Customer */}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <IdSelect
+              label="Customer"
+              placeholder="Select the customer"
+              data={customersData}
+              value={customerFirst}
+              onChange={setCustomerFirst}
+              error={errorFor('partner_id')}
+            />
+          </Grid.Col>
 
-            {/* Delivery Address */}
-            <div>
-              <label className="block mb-1 font-medium">Delivery Address</label>
-              {isDeliveryAddressAvailable ? (
-                <Select
-                  value={deliveryAddress}
-                  onValueChange={setDeliveryAddress}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select the Delivery Address" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {deliveryAddressesData.map(({ label, value }) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  value={deliveryAddress !== '-1' ? deliveryAddress : ''}
-                  disabled
-                />
-              )}
-            </div>
-
-            {/* Warehouse */}
-            <div>
-              <label className="block mb-1 font-medium">Warehouse</label>
-              <Select value={warehouseFirst} onValueChange={setWarehouseFirst}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select the Warehouse" />
-                </SelectTrigger>
-                <SelectContent>
-                  {warehouseData.map(({ label, value }) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Policy Type (full width) */}
-            <div className="sm:col-span-2">
-              <label className="block mb-1 font-medium">Policy Type</label>
-              <Select
-                value={policyTypeFirst}
-                onValueChange={setPolicyTypeFirst}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select the policy type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {policyTypesData.map(({ label, value }) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {/* Policies Balance */}
-            {policiesData.length > 0 && (
-              <div className="border rounded-md p-4 mt-6 sm:col-span-2">
-                <div className="grid grid-cols-2 font-semibold border-b pb-2 mb-2">
-                  <div>Policy</div>
-                  <div>Remaining Amount</div>
-                </div>
-                {policiesData.map((policy, idx) => (
-                  <div
-                    key={idx}
-                    className="grid grid-cols-2 py-1 border-b last:border-b-0"
-                  >
-                    <div>{policy.code}</div>
-                    <div>{priceFormatter(policy.remaining_amount)} PKR</div>
-                  </div>
-                ))}
-              </div>
+          {/* Delivery Address */}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            {isDeliveryAddressAvailable ? (
+              <IdSelect
+                label="Delivery Address"
+                placeholder="Select the Delivery Address"
+                data={deliveryAddressesData}
+                value={deliveryAddress}
+                onChange={setDeliveryAddress}
+              error={errorFor('delivery_id')}
+              />
+            ) : (
+              <TextInput
+                label="Delivery Address"
+                value={deliveryAddress !== '-1' ? deliveryAddress : ''}
+                readOnly
+                disabled
+              />
             )}
+          </Grid.Col>
 
+          {/* Warehouse */}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <IdSelect
+              label="Warehouse"
+              placeholder="Select the Warehouse"
+              data={warehouseData}
+              value={warehouseFirst}
+              onChange={setWarehouseFirst}
+              error={errorFor('warehouse_id')}
+            />
+          </Grid.Col>
+
+          {/* Policy Type (full width) */}
+          <Grid.Col span={12}>
+            <IdSelect
+              label="Policy Type"
+              placeholder="Select the policy type"
+              data={policyTypesData}
+              value={policyTypeFirst}
+              onChange={setPolicyTypeFirst}
+              error={errorFor('policy_type')}
+            />
+          </Grid.Col>
+
+          {/* Policies Balance */}
+          {policiesData.length > 0 && (
+            <Grid.Col span={12}>
+              <Paper withBorder p="sm">
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Policy</Table.Th>
+                      <Table.Th>Remaining Amount</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {policiesData.map((policy, idx) => (
+                      <Table.Tr key={idx}>
+                        <Table.Td>{policy.code}</Table.Td>
+                        <Table.Td>
+                          {priceFormatter(policy.remaining_amount)} PKR
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Paper>
+            </Grid.Col>
+          )}
+
+          <Grid.Col span={{ base: 12, sm: 6 }}>
             <SelectBox
               label="Policy"
               placeholder="Select the policy"
               selectedValue={order?.policy || ''}
-              onValueChange={(value) => handleChange('policy', value)}
+              onValueChange={(value) => {
+                stopLinePrefill();
+                handleChange('policy', value);
+              }}
               data={policiesDataSecond}
             />
+          </Grid.Col>
 
-            {/* Ref. policy */}
-            {policyType?.type === 'is_secure_credit' && (
+          {/* Ref. policy */}
+          {policyType?.type === 'is_secure_credit' && (
+            <Grid.Col span={{ base: 12, sm: 6 }}>
               <SelectBox
                 label="Ref. policy"
                 placeholder="Select the Ref. policy"
                 selectedValue={order?.refPolicy}
-                onValueChange={(value) => handleChange('refPolicy', value)}
+                onValueChange={(value) => {
+                  stopLinePrefill();
+                  handleChange('refPolicy', value);
+                }}
                 data={referencePoliciesDataRender}
               />
-            )}
+            </Grid.Col>
+          )}
 
+          <Grid.Col span={{ base: 12, sm: 6 }}>
             <SelectBox
               label="Product"
               placeholder="Select the product"
               selectedValue={order?.product}
               onValueChange={(value) => {
+                stopLinePrefill();
                 handleChange('product', value);
               }}
               data={productsData}
             />
+          </Grid.Col>
 
-            {/* Packing */}
+          {/* Packing */}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
             <SelectBox
               label="Packing"
               placeholder="Select the packing"
@@ -913,111 +1106,118 @@ const AddOrders = () => {
               onValueChange={(value) => handleChange('packing', value)}
               data={packingsData}
             />
+          </Grid.Col>
 
-            <div>
-              {/* No of Packs */}
-              <label className="block mb-1 font-medium">No of Packs</label>
-              <Input
-                // label="No of Packs"
-                placeholder="Number of packs"
-                value={order?.noOfPacks}
-                onChange={(e) => handleChange('noOfPacks', e.target.value)}
-                disabled={packingsData.length === 0}
-              />
-            </div>
+          {/* No of Packs */}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <TextInput
+              label="No of Packs"
+              placeholder="Number of packs"
+              value={order?.noOfPacks}
+              onChange={(e) => handleChange('noOfPacks', e.target.value)}
+              disabled={packingsData.length === 0}
+            />
+          </Grid.Col>
 
-            {/* Unit */}
-            <div>
-              <label className="block mb-1 font-medium">Unit</label>
-              <Input placeholder="Unit" value={order?.unit} disabled={true} />
-            </div>
+          {/* Unit */}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <TextInput
+              label="Unit"
+              placeholder="Unit"
+              value={order?.unit}
+              readOnly
+              disabled
+            />
+          </Grid.Col>
 
-            {/* Unit Price */}
+          {/* Unit Price */}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <TextInput
+              label="Unit Price"
+              placeholder="Unit price"
+              value={order?.unitPrice.price_unit}
+              readOnly
+              disabled
+            />
+          </Grid.Col>
 
-            <div>
-              <label className="block mb-1 font-medium">Unit Price</label>
-              <Input
-                placeholder="Unit price"
-                value={order?.unitPrice.price_unit}
-                disabled={true}
-              />
-            </div>
+          {/* Discount */}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <TextInput
+              label="Discount"
+              placeholder="Discount"
+              value={order?.discount}
+              readOnly
+              disabled
+            />
+          </Grid.Col>
 
-            {/* Discount */}
-            <div>
-              <label className="block mb-1 font-medium">Discount</label>
-              <Input
-                placeholder="Discount"
-                value={order?.discount}
-                disabled={true}
-              />
-            </div>
+          {/* Total */}
+          <Grid.Col span={12}>
+            <TextInput
+              label="Total"
+              placeholder="Total"
+              value={order?.total}
+              readOnly
+              disabled
+              styles={{ input: { fontWeight: 600 } }}
+            />
+          </Grid.Col>
+        </Grid>
 
-            {/* Total */}
-            <div className="sm:col-span-2">
-              <label className="block mb-1 font-medium">Total</label>
-              <Input
-                placeholder="Total"
-                value={order?.total}
-                disabled={true}
-                className=" text-gray-700 font-semibold"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
-            {otherProducts.length >= 1 &&
-              otherProducts.map((item, index) => (
-                <div
-                  key={index}
-                  className="bg-white p-4 rounded-lg shadow-md flex flex-col"
+        {otherProducts.length >= 1 && (
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md" mt="lg">
+            {otherProducts.map((item, index) => (
+              <Card key={index} withBorder padding="md">
+                <Group
+                  justify="space-between"
+                  align="center"
+                  wrap="nowrap"
+                  gap="md"
                 >
-                  <div className="flex flex-wrap gap-4">
-                    <div className="flex flex-col gap-2">
-                      <span className="text-lg font-semibold">
-                        {item.productName}
-                      </span>
-                      <span>Packs: {item.noOfPacks}</span>
-                      <span>Policy: {item.policyName}</span>
-                      {item.refPolicy && item.refPolicyName && (
-                        <span>Ref Policy: {item.refPolicyName}</span>
-                      )}
-                      <span>Total: {item.total} PKR</span>
-                    </div>
-                    <div className="flex-grow flex items-center justify-center">
-                      <Button
-                        variant="outline"
-                        className="text-red-500"
-                        onClick={() => dispatch(removeProduct({ id: item.id }))}
-                      >
-                        <Trash2Icon size={20} color="red" />
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-gray-500">Added</div>
-                </div>
-              ))}
-          </div>
-          <div className="flex mt-6  md:flex-row flex-col px-0 gap-2 w-full">
-            <Button
-              onClick={handleAddNewProduct}
-              disabled={loading}
-              variant="secondary"
-              className="w-full md:w-1/2 "
-            >
-              {'Add New Product'}
-            </Button>
-            <Button
-              onClick={handleNext}
-              disabled={loading}
-              className="w-full md:w-1/2 "
-            >
-              {'Create Sale Order'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </>
+                  <Stack gap={4}>
+                    <Text fw={600} size="lg">
+                      {item.productName}
+                    </Text>
+                    <Text size="sm">Packs: {item.noOfPacks}</Text>
+                    <Text size="sm">Policy: {item.policyName}</Text>
+                    {item.refPolicy && item.refPolicyName && (
+                      <Text size="sm">Ref Policy: {item.refPolicyName}</Text>
+                    )}
+                    <Text size="sm">Total: {item.total} PKR</Text>
+                  </Stack>
+                  <ActionIcon
+                    variant="light"
+                    color="red"
+                    size="lg"
+                    aria-label="Remove product"
+                    onClick={() => dispatch(removeProduct({ id: item.id }))}
+                  >
+                    <Trash2Icon size={18} />
+                  </ActionIcon>
+                </Group>
+                <Text size="xs" c="dimmed" mt="xs">
+                  Added
+                </Text>
+              </Card>
+            ))}
+          </SimpleGrid>
+        )}
+
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm" mt="lg">
+          <Button
+            onClick={handleAddNewProduct}
+            disabled={loading}
+            variant="default"
+          >
+            {'Add New Product'}
+          </Button>
+          <Button onClick={handleNext} disabled={loading}>
+            {record ? 'Save & Resend' : 'Create Sale Order'}
+          </Button>
+        </SimpleGrid>
+      </Paper>
+    </Container>
   );
 };
 

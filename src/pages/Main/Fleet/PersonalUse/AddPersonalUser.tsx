@@ -1,36 +1,62 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { toast } from 'sonner';
-import { format } from 'date-fns';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Loader2 } from 'lucide-react';
-import { callApi, callServerAPI } from '@/api';
-import { selectUser } from '@/redux/slices/AuthSlice';
+import { useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
+  Alert,
+  Button,
+  Container,
+  Group,
+  Loader,
+  Paper,
+  SimpleGrid,
+  Stack,
+  TextInput,
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
 import { CalendarIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import dayjs from 'dayjs';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
+import { toast } from '@/lib/toast';
+import { PageHeader } from '@/components/app';
+
+const RESOURCE = '/v2/fleet/personal-use';
+
+// Same rule the calendar had before: no future dates, nothing older than
+// five days, and not today's day of the month.
+const isDateDisabled = (value: string) => {
+  const date = dayjs(value).toDate();
+  return (
+    date > new Date() ||
+    date < new Date(new Date().setDate(new Date().getDate() - 5)) ||
+    date.getDate() === new Date().getDate()
+  );
+};
 
 const AddPersonalUse = () => {
   const navigate = useNavigate();
-  const { user, company } = useSelector(selectUser);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  // A failed entry opened from the list to be fixed and sent again.
+  const record = useLocation().state?.record;
+
+  const [selectedDate, setSelectedDate] = useState<Date>(
+    record?.date ? dayjs(record.date.slice(0, 10)).toDate() : new Date(),
+  );
   const [personalUse, setPersonalUseData] = useState({
-    personalTravelKm: '',
-    personalTravelAmount: '',
+    personalTravelKm: String(record?.personal_travel ?? ''),
+    personalTravelAmount: String(record?.personal_travel_amount ?? ''),
   });
-  const [openDatePicker, setOpenDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [buttonLoading, setButtonLoading] = useState(false);
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two entries.
+  const requestId = useRef(newRequestId());
 
   const handleSubmit = () => {
     if (
@@ -42,154 +68,125 @@ const AddPersonalUse = () => {
       return;
     }
 
-    const onCreatedSuccess = () => {
-      setLoading(false);
-      setButtonLoading(false);
-      toast.success('Personal use record added successfully');
-      navigate(-1);
-    };
-
-    const onCreatedError = () => {
-      setLoading(false);
-      setButtonLoading(false);
-      toast.error('Failed to add personal use record');
-    };
-
-    const onSuccess = (response) => {
-      callApi(
-        'POST',
-        '/fleet/personal-use',
-        {
-          ...data,
-          id: response.data.message[0].id,
-          name: response.data.message[0].name,
-          odooStatus: response.data.message[0].state,
-          date: selectedDate,
-        },
-        onCreatedSuccess,
-        onCreatedError,
-      );
-    };
-
-    const onError = () => {
-      setLoading(false);
-      setButtonLoading(false);
-      toast.error('Failed to add personal use record');
-    };
-
-    const data = {
-      date: dayjs(selectedDate).format('DD-MM-YYYY'),
+    const body = {
+      date: dayjs(selectedDate).format('YYYY-MM-DD'),
       km: Number(personalUse.personalTravelKm),
       amount: Number(personalUse.personalTravelAmount),
-      employee_id: Number(user.employee_id),
-      company_id: Number(company.id),
+    };
+
+    const onSuccess = () => {
+      setLoading(false);
+      setButtonLoading(false);
+      toast.success(
+        record
+          ? 'Personal use record updated and queued'
+          : 'Personal use record saved and queued',
+      );
+      navigate('/personal-use');
+    };
+
+    const onError = (error) => {
+      setLoading(false);
+      setButtonLoading(false);
+      const message = errorMessage(error, 'Failed to add personal use record');
+      setFieldError({ field: error?.field, message });
+      toast.error(message);
     };
 
     setLoading(true);
     setButtonLoading(true);
-    callServerAPI('POST', '/post/personal/toll', { data }, onSuccess, onError);
+    setFieldError(null);
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
+      callApi(
+        'POST',
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
+      );
+    }
   };
 
+  const errorFor = (field: string) =>
+    fieldError?.field === field ? fieldError.message : undefined;
+
   return (
-    <div className="min-h-screen  flex items-center justify-center p-4">
+    <Container size="sm" px={0}>
+      <PageHeader
+        title={record ? 'Edit Personal Use' : 'Add Personal Use'}
+        back
+      />
       {loading ? (
-        <Loader2 className="h-8 w-8 animate-spin" />
+        <Group justify="center" h={256}>
+          <Loader />
+        </Group>
       ) : (
-        <Card className="w-full max-w-2xl">
-          <CardHeader>
-            <CardTitle>Add Personal Use</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
-                <Popover open={openDatePicker} onOpenChange={setOpenDatePicker}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'w-full justify-start text-left font-normal',
-                        !selectedDate && 'text-muted-foreground',
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {selectedDate
-                        ? format(selectedDate, 'dd-MM-yyyy')
-                        : 'Pick a date'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={(date) => {
-                        if (date) {
-                          setSelectedDate(date);
-                          setOpenDatePicker(false);
-                        }
-                      }}
-                      disabled={(date) =>
-                        date > new Date() ||
-                        date <
-                          new Date(
-                            new Date().setDate(new Date().getDate() - 5),
-                          ) ||
-                        date.getDate() === new Date().getDate()
-                      }
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="personalTravelKm">Personal Travel (Km)</Label>
-                <Input
-                  id="personalTravelKm"
-                  type="number"
-                  placeholder="Enter personal travel in KM"
-                  value={personalUse.personalTravelKm}
-                  onChange={(e) =>
-                    setPersonalUseData({
-                      ...personalUse,
-                      personalTravelKm: e.target.value,
-                    })
+        <Paper withBorder shadow="sm" p="lg">
+          <Stack gap="md">
+            {fieldError &&
+              !['date', 'km', 'amount'].includes(fieldError.field) && (
+                <Alert color="red" variant="light">
+                  {fieldError.message}
+                </Alert>
+              )}
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+              <DatePickerInput
+                label="Date"
+                placeholder="Pick a date"
+                valueFormat="DD-MM-YYYY"
+                leftSection={<CalendarIcon size={16} />}
+                value={selectedDate}
+                onChange={(value) => {
+                  if (value) {
+                    setSelectedDate(dayjs(value).toDate());
                   }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="personalTravelAmount">
-                  Personal Travel Amount
-                </Label>
-                <Input
-                  id="personalTravelAmount"
-                  type="number"
-                  placeholder="Enter personal travel amount"
-                  value={personalUse.personalTravelAmount}
-                  onChange={(e) =>
-                    setPersonalUseData({
-                      ...personalUse,
-                      personalTravelAmount: e.target.value,
-                    })
-                  }
-                />
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end">
+                }}
+                excludeDate={isDateDisabled}
+                error={errorFor('date')}
+              />
+              <TextInput
+                label="Personal Travel (Km)"
+                type="number"
+                placeholder="Enter personal travel in KM"
+                value={personalUse.personalTravelKm}
+                onChange={(e) =>
+                  setPersonalUseData({
+                    ...personalUse,
+                    personalTravelKm: e.currentTarget.value,
+                  })
+                }
+                error={errorFor('km')}
+              />
+              <TextInput
+                label="Personal Travel Amount"
+                type="number"
+                placeholder="Enter personal travel amount"
+                value={personalUse.personalTravelAmount}
+                onChange={(e) =>
+                  setPersonalUseData({
+                    ...personalUse,
+                    personalTravelAmount: e.currentTarget.value,
+                  })
+                }
+                error={errorFor('amount')}
+              />
+            </SimpleGrid>
+
+            <Group justify="flex-end" mt="xs">
               <Button
                 onClick={handleSubmit}
-                disabled={buttonLoading}
-                className="w-full md:w-auto"
+                loading={buttonLoading}
+                w={{ base: '100%', md: 'auto' }}
               >
-                {buttonLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
-                Submit
+                {record ? 'Save & Resend' : 'Submit'}
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </Group>
+          </Stack>
+        </Paper>
       )}
-    </div>
+    </Container>
   );
 };
 

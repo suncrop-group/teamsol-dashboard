@@ -1,24 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { addSales } from '@/redux/slices/SalesSlice';
-import { resetProducts } from '@/redux/slices/OrderCreationSlice';
-import { callApi } from '@/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import {
+  Badge,
+  Box,
+  Button,
+  Card,
+  Container,
+  Divider,
+  Group,
+  Loader,
+  Paper,
+  Stack,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-
+  Text,
+  TextInput,
+} from '@mantine/core';
 import {
-  Loader2,
   Search,
   Plus,
   Calendar,
@@ -28,196 +26,201 @@ import {
   ShoppingCart,
   Warehouse,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import dayjs from 'dayjs';
+import { addSales } from '@/redux/slices/SalesSlice';
+import { resetProducts } from '@/redux/slices/OrderCreationSlice';
+import { callApi } from '@/api';
+import { isFailed, isUnsynced, recordRef, useQueuedRefresh } from '@/api/v2';
 import { priceFormatter } from '@/utils';
-import { DateFilter } from '@/components/DateFilter';
-import type { DateRange } from 'react-day-picker';
+import { toast } from '@/lib/toast';
+import { DateFilter, type DateRange } from '@/components/DateFilter';
+import {
+  EmptyState,
+  FailedActions,
+  PageHeader,
+  StatusBadge,
+} from '@/components/app';
 
-const statusStyles = {
-  sent: 'bg-green-100 text-green-800 hover:bg-green-200',
-  pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  canceled: 'bg-red-100 text-red-800 hover:bg-red-200',
-  cancelled: 'bg-red-100 text-red-800 hover:bg-red-200',
-  quotation: 'bg-cyan-100 text-cyan-800 hover:bg-cyan-200',
-  approved: 'bg-green-100 text-green-800 hover:bg-green-200',
-  draft: 'bg-red-100 text-red-800 hover:bg-red-200',
-  confirmed: 'bg-green-100 text-green-800 hover:bg-green-200',
-  approval: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  approve: 'bg-green-100 text-green-800 hover:bg-green-200',
-  submit: 'bg-green-100 text-green-800 hover:bg-green-200',
-  'to report': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  submitted: 'bg-cyan-100 text-cyan-800 hover:bg-cyan-200',
-  done: 'bg-green-100 text-green-800 hover:bg-green-200',
-  'sale order': 'bg-green-100 text-green-800 hover:bg-green-200',
-};
+const RESOURCE = '/v2/sales';
+
+// The Odoo sequence (or id) once the order is there, the job id until then.
+const orderRef = (item) =>
+  recordRef(item, item?.order_sequence || item?.order_id);
+
+// A customer-created order without a warehouse shows a prompt instead of
+// its statuses, unless it has been cancelled. Otherwise: our status always,
+// Odoo's own state once the order is there.
+const SalesStatus = ({ item, size }: { item; size?: string }) =>
+  !item?.warehouse_id &&
+  item?.createdByCustomer &&
+  item.odooStatus?.toLowerCase() !== 'cancelled' ? (
+    <Badge
+      color="orange"
+      variant="light"
+      size={size}
+      w="fit-content"
+      leftSection={<Warehouse size={12} />}
+    >
+      Add warehouse
+    </Badge>
+  ) : (
+    <>
+      <StatusBadge status={item?.status} size={size} />
+      {!isUnsynced(item) && (
+        <StatusBadge status={item?.odooStatus} size={size} />
+      )}
+    </>
+  );
+
+// Why Odoo refused the order, and the ways out. Clicks stay here instead of
+// opening the order.
+const Failed = ({ item, onEdit, onChanged }) =>
+  isFailed(item) ? (
+    <Box onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
+      <FailedActions
+        item={item}
+        resource={RESOURCE}
+        onEdit={() => onEdit(item)}
+        onChanged={onChanged}
+      />
+    </Box>
+  ) : null;
 
 // Mobile Card Component
-const SalesCard = ({ item, onClick }) => {
+const SalesCard = ({ item, onClick, onEdit, onChanged }) => {
   return (
     <Card
-      className="hover:shadow-lg transition-shadow duration-200 cursor-pointer"
-      onClick={() => onClick(item.order_id)}
+      withBorder
+      padding="md"
+      style={{ cursor: 'pointer' }}
+      onClick={() => onClick(item._id)}
     >
-      <CardContent className="p-4 space-y-3">
+      <Stack gap="sm">
         {/* Header with Partner and Territory */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 space-y-1">
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-blue-600" />
-              <h3 className="font-semibold text-base">{item?.partner?.name}</h3>
-            </div>
-            <div className="flex items-center gap-2 ml-6">
-              <MapPin className="h-3 w-3 text-gray-400" />
-              <span className="text-sm text-gray-600">
-                {item?.territory?.name}
-              </span>
-            </div>
+        <Group justify="space-between" align="flex-start" wrap="nowrap">
+          <Stack gap={4} flex={1} miw={0}>
+            <Group gap="xs" wrap="nowrap">
+              <User size={16} color="var(--mantine-color-blue-6)" />
+              <Text fw={600}>{item?.partner?.name}</Text>
+            </Group>
+            <Group gap="xs" wrap="nowrap" c="dimmed" ml={24}>
+              <MapPin size={12} />
+              <Text size="sm">{item?.territory?.name}</Text>
+            </Group>
             {item?.createdByCustomer && (
-              <Badge className="bg-blue-100 text-blue-700 border-0 text-xs ml-6">
+              <Badge color="blue" variant="light" size="sm" ml={24}>
                 Created by Customer
               </Badge>
             )}
-          </div>
-          <div className="flex flex-col gap-1 items-end">
-            {!item?.warehouse_id &&
-            item?.createdByCustomer &&
-            item.odooStatus.toLowerCase() !== 'cancelled' ? (
-              <Badge className="bg-orange-100 text-orange-700 border-0 text-xs flex items-center gap-1">
-                <Warehouse className="h-3 w-3" />
-                Add warehouse
-              </Badge>
-            ) : (
-              <>
-                <Badge
-                  className={`${
-                    statusStyles[item?.status?.toLowerCase()]
-                  } border-0 text-xs capitalize`}
-                >
-                  {item?.status}
-                </Badge>
-                <Badge
-                  className={`${
-                    statusStyles[item?.odooStatus?.toLowerCase()]
-                  } border-0 text-xs capitalize`}
-                >
-                  {item?.odooStatus}
-                </Badge>
-              </>
-            )}
-          </div>
-        </div>
+          </Stack>
+          <Stack gap={4} align="flex-end">
+            <SalesStatus item={item} size="sm" />
+          </Stack>
+        </Group>
 
         {/* ID and Sequence */}
-        <div className="space-y-1 text-sm text-gray-600">
-          <div className="flex items-center gap-2">
-            <Hash className="h-4 w-4" />
-            <span>
-              #{item?.order_id} - {item?.order_sequence}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            <span>{dayjs(item?.createdAt).format('DD/MM/YYYY HH:mm')}</span>
-          </div>
-        </div>
+        <Stack gap={4}>
+          <Group gap="xs" c="dimmed" wrap="nowrap">
+            <Hash size={16} />
+            <Text size="sm">
+              {orderRef(item)}
+              {item?.order_id && item?.order_sequence
+                ? ` - #${item.order_id}`
+                : ''}
+            </Text>
+          </Group>
+          <Group gap="xs" c="dimmed" wrap="nowrap">
+            <Calendar size={16} />
+            <Text size="sm">
+              {dayjs(item?.createdAt).format('DD/MM/YYYY HH:mm')}
+            </Text>
+          </Group>
+        </Stack>
 
         {/* Total */}
-        <div className="pt-2 border-t">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-gray-500">PKR</span>
-            <span className="font-medium text-green-600">
-              {priceFormatter(item?.total)}
-            </span>
-          </div>
-        </div>
-      </CardContent>
+        <Divider />
+        <Group gap={6}>
+          <Text size="xs" fw={500} c="dimmed">
+            PKR
+          </Text>
+          <Text fw={500} c="green">
+            {priceFormatter(item?.total)}
+          </Text>
+        </Group>
+
+        <Failed item={item} onEdit={onEdit} onChanged={onChanged} />
+      </Stack>
     </Card>
   );
 };
 
 // Desktop Table Row Component
-const SalesRow = ({ item, onClick }) => {
+const SalesRow = ({ item, onClick, onEdit, onChanged }) => {
   return (
-    <TableRow
-      className="hover: transition-colors cursor-pointer"
-      onClick={() => onClick(item.order_id)}
+    <Table.Tr
+      style={{ cursor: 'pointer' }}
+      onClick={() => onClick(item._id)}
     >
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Hash className="h-4 w-4 text-gray-400" />
-          <div>
-            <div className="font-medium">#{item?.order_id}</div>
-            <div className="text-xs text-gray-500">{item?.order_sequence}</div>
-          </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-start gap-2">
-          <User className="h-4 w-4 text-blue-600 mt-0.5" />
-          <div>
-            <div className="font-medium">{item?.partner?.name}</div>
-            <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-              <MapPin className="h-3 w-3" />
-              {item?.territory?.name}
-            </div>
+      <Table.Td>
+        <Group gap="xs" wrap="nowrap">
+          <Hash size={16} color="var(--mantine-color-gray-5)" />
+          <Box>
+            <Text fw={500}>{orderRef(item)}</Text>
+            {item?.order_id && item?.order_sequence && (
+              <Text size="xs" c="dimmed">
+                #{item.order_id}
+              </Text>
+            )}
+          </Box>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap="xs" align="flex-start" wrap="nowrap">
+          <User
+            size={16}
+            color="var(--mantine-color-blue-6)"
+            style={{ flexShrink: 0, marginTop: 4 }}
+          />
+          <Box>
+            <Text fw={500}>{item?.partner?.name}</Text>
+            <Group gap={4} c="dimmed" wrap="nowrap" mt={2}>
+              <MapPin size={12} />
+              <Text size="xs">{item?.territory?.name}</Text>
+            </Group>
             {item?.createdByCustomer && (
-              <Badge className="bg-blue-100 text-blue-700 border-0 text-xs mt-1">
+              <Badge color="blue" variant="light" size="sm" mt={4}>
                 Created by Customer
               </Badge>
             )}
-          </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-gray-500">PKR</span>
-          <span className="font-semibold text-green-600">
+          </Box>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap={6} wrap="nowrap">
+          <Text size="xs" fw={500} c="dimmed">
+            PKR
+          </Text>
+          <Text fw={600} c="green">
             {priceFormatter(item?.total)}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <Calendar className="h-4 w-4" />
-          <div>
-            <div>{dayjs(item?.createdAt).format('DD/MM/YYYY')}</div>
-            <div className="text-xs text-gray-400">
-              {dayjs(item?.createdAt).format('HH:mm')}
-            </div>
-          </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex flex-col gap-1">
-          {!item?.warehouse_id &&
-          item?.createdByCustomer &&
-          item.odooStatus.toLowerCase() !== 'cancelled' ? (
-            <Badge className="bg-orange-100 text-orange-700 border-0 w-fit text-xs flex items-center gap-1">
-              <Warehouse className="h-3 w-3" />
-              Add warehouse
-            </Badge>
-          ) : (
-            <>
-              <Badge
-                className={`${
-                  statusStyles[item?.status?.toLowerCase()]
-                } border-0 w-fit capitalize`}
-              >
-                {item?.status}
-              </Badge>
-              <Badge
-                className={`${
-                  statusStyles[item?.odooStatus?.toLowerCase()]
-                } border-0 w-fit capitalize`}
-              >
-                {item?.odooStatus}
-              </Badge>
-            </>
-          )}
-        </div>
-      </TableCell>
-    </TableRow>
+          </Text>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap="xs" c="dimmed" wrap="nowrap">
+          <Calendar size={16} />
+          <Box>
+            <Text size="sm">{dayjs(item?.createdAt).format('DD/MM/YYYY')}</Text>
+            <Text size="xs">{dayjs(item?.createdAt).format('HH:mm')}</Text>
+          </Box>
+        </Group>
+      </Table.Td>
+      <Table.Td maw={300}>
+        <Stack gap={4}>
+          <SalesStatus item={item} />
+          <Failed item={item} onEdit={onEdit} onChanged={onChanged} />
+        </Stack>
+      </Table.Td>
+    </Table.Tr>
   );
 };
 
@@ -231,17 +234,20 @@ const Sales = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const fetchSalesOrders = () => {
-    dispatch(resetProducts());
-    setLoading(true);
+  // `quiet` reloads in place, without swapping the table for a spinner.
+  const fetchSalesOrders = (quiet = false) => {
+    if (!quiet) {
+      dispatch(resetProducts());
+      setLoading(true);
+    }
 
     callApi(
       'GET',
-      '/sales',
+      `${RESOURCE}?limit=200`,
       null,
       (response) => {
         setLoading(false);
-        const sorted = response.data.sort(
+        const sorted = (response.data || []).sort(
           (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
         );
         setSalesOrders(sorted);
@@ -249,7 +255,7 @@ const Sales = () => {
       },
       () => {
         setLoading(false);
-        toast.error('Failed to fetch sales orders');
+        if (!quiet) toast.error('Failed to fetch sales orders');
       },
     );
   };
@@ -259,6 +265,15 @@ const Sales = () => {
     // eslint-disable-next-line
   }, []);
 
+  useQueuedRefresh(salesOrders, () => fetchSalesOrders(true));
+
+  const rowProps = {
+    // The detail page is addressed by the record's _id.
+    onClick: (_id) => navigate(`/sale/${_id}`),
+    onEdit: (item) => navigate('/sales/add', { state: { record: item } }),
+    onChanged: () => fetchSalesOrders(true),
+  };
+
   const filteredSalesOrders = salesOrders.filter((item) => {
     const matchesSearch =
       item?.partner?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -266,6 +281,7 @@ const Sales = () => {
         ?.toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
       item?.order_id?.toString().includes(searchQuery) ||
+      orderRef(item).toLowerCase().includes(searchQuery.toLowerCase()) ||
       item?.order_sequence?.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesDate =
@@ -278,108 +294,94 @@ const Sales = () => {
   });
 
   return (
-    <div className="min-h-screen  p-4">
-      <div className="container mx-auto max-w-7xl">
-        <Card className="shadow-lg border-0">
-          <CardHeader className="bg-white border-b">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <CardTitle className="text-2xl font-bold flex items-center gap-2">
-                <ShoppingCart className="h-6 w-6 text-blue-600" />
-                Sales Orders
-              </CardTitle>
-              <Button onClick={() => navigate('/sales/add')}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Order
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6">
-            {/* Search Bar */}
-            <div className="mb-6 flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search by partner, territory, order ID, or sequence..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <DateFilter
-                selectedRange={selectedDateRange}
-                onSelect={setSelectedDateRange}
-              />
-            </div>
+    <Container size="xl" px={0}>
+      <PageHeader
+        title="Sales Orders"
+        actions={
+          <Button
+            leftSection={<Plus size={16} />}
+            onClick={() => navigate('/sales/add')}
+          >
+            Add Order
+          </Button>
+        }
+      />
 
-            {loading ? (
-              <div className="flex justify-center items-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-              </div>
-            ) : filteredSalesOrders.length === 0 ? (
-              <div className="text-center py-12">
-                <ShoppingCart className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
-                  {searchQuery
-                    ? 'No sales orders found matching your search.'
-                    : 'No sales orders found.'}
-                </p>
-                <p className="text-gray-400 text-sm mt-2 mb-4">
-                  {!searchQuery &&
-                    'Create your first sales order to get started.'}
-                </p>
-                {!searchQuery && (
-                  <Button onClick={() => navigate('/sales/add')}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Sales Order
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <>
-                {/* Desktop Table View */}
-                <div className="hidden md:block overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="font-semibold">
-                          Order ID
-                        </TableHead>
-                        <TableHead className="font-semibold">
-                          Partner & Territory
-                        </TableHead>
-                        <TableHead className="font-semibold">Total</TableHead>
-                        <TableHead className="font-semibold">Date</TableHead>
-                        <TableHead className="font-semibold">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredSalesOrders.map((item) => (
-                        <SalesRow
-                          key={item.order_id}
-                          item={item}
-                          onClick={(order_id) => navigate(`/sale/${order_id}`)}
-                        />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+      <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'lg' }}>
+        {/* Search Bar */}
+        <Group gap="sm" mb="lg" wrap="nowrap">
+          <TextInput
+            flex={1}
+            placeholder="Search by partner, territory, order ID, or sequence..."
+            leftSection={<Search size={16} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.currentTarget.value)}
+          />
+          <DateFilter
+            selectedRange={selectedDateRange}
+            onSelect={setSelectedDateRange}
+          />
+        </Group>
 
-                {/* Mobile Card View */}
-                <div className="md:hidden space-y-4">
+        {loading ? (
+          <Group justify="center" h={256}>
+            <Loader />
+          </Group>
+        ) : filteredSalesOrders.length === 0 ? (
+          <EmptyState
+            icon={<ShoppingCart size={32} />}
+            title={
+              searchQuery
+                ? 'No sales orders found matching your search.'
+                : 'No sales orders found.'
+            }
+            description={
+              !searchQuery && 'Create your first sales order to get started.'
+            }
+            action={
+              !searchQuery && (
+                <Button
+                  mt="sm"
+                  leftSection={<Plus size={16} />}
+                  onClick={() => navigate('/sales/add')}
+                >
+                  Add Sales Order
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <Table.ScrollContainer minWidth={720} visibleFrom="md">
+              <Table highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Order ID</Table.Th>
+                    <Table.Th>Partner & Territory</Table.Th>
+                    <Table.Th>Total</Table.Th>
+                    <Table.Th>Date</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
                   {filteredSalesOrders.map((item) => (
-                    <SalesCard
-                      key={item.order_id}
-                      item={item}
-                      onClick={(order_id) => navigate(`/sale/${order_id}`)}
-                    />
+                    <SalesRow key={item._id} item={item} {...rowProps} />
                   ))}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+
+            {/* Mobile Card View */}
+            <Stack gap="md" hiddenFrom="md">
+              {filteredSalesOrders.map((item) => (
+                <SalesCard key={item._id} item={item} {...rowProps} />
+              ))}
+            </Stack>
+          </>
+        )}
+      </Paper>
+    </Container>
   );
 };
 

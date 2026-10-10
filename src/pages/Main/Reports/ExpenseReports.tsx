@@ -1,106 +1,75 @@
 import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
+import {
+  Box,
+  Button,
+  Container,
+  Group,
+  Loader,
+  Modal,
+  Paper,
+  Select,
+  Stack,
+  Table,
+  Text,
+} from '@mantine/core';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import { callApi } from '@/api';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { uploadToCloudinary } from '@/utils';
 import dayjs from 'dayjs';
 import { months } from '@/data';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-
-import { Loader2, Eye, FileText } from 'lucide-react';
+import { EmptyState, PageHeader, StatusBadge } from '@/components/app';
+import { Eye, FileText } from 'lucide-react';
 import { saveAs } from 'file-saver';
-
-const stylesByStatus = {
-  sent: 'bg-green-100 text-green-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  cancelled: 'bg-red-100 text-red-800',
-  quotation: 'bg-blue-100 text-blue-800',
-  approved: 'bg-green-100 text-green-800',
-  draft: 'bg-red-100 text-red-800',
-  confirmed: 'bg-green-100 text-green-800',
-  submitted: 'bg-yellow-100 text-yellow-800',
-  approval: 'bg-yellow-100 text-yellow-800',
-  submit: 'bg-blue-100 text-blue-800',
-  'to report': 'bg-yellow-100 text-yellow-800',
-  done: 'bg-green-100 text-green-800',
-  success: 'bg-green-100 text-green-800',
-};
 
 const ExpenseReportRow = ({ item, handleOpenRemarks }) => {
   return (
-    <TableRow>
-      <TableCell>
+    <Table.Tr>
+      <Table.Td>
         {months.find((m) => m.value === item.selectedMonth)?.label}{' '}
         {item.selectedYear}
-      </TableCell>
-      {/* <TableCell>
-        {item.territory_details.map((t) => t.name).join(', ')}
-      </TableCell> */}
-      <TableCell>
+      </Table.Td>
+      <Table.Td>
         #{item._id} - {dayjs(item.createdAt).format('DD/MM/YYYY HH:mm')}
-      </TableCell>
-      <TableCell>
+      </Table.Td>
+      <Table.Td>
         {item.receiver_details.name} ({item.receiver_details.work_email})
-      </TableCell>
-      <TableCell>
-        <span
-          className={`px-2 py-1 rounded text-xs font-medium ${
-            stylesByStatus[item.status?.toLowerCase()]
-          }`}
-        >
-          {item.status}
-        </span>
-      </TableCell>
-      <TableCell className="flex gap-2">
-        {item.reportURL && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.open(item.reportURL, '_blank')}
-            aria-label="View report"
-          >
-            <FileText className="h-4 w-4 mr-1" /> Report
-          </Button>
-        )}
-        {item.remarks && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleOpenRemarks(item)}
-            aria-label="View remarks"
-          >
-            <Eye className="h-4 w-4 mr-1" /> Remarks
-          </Button>
-        )}
-      </TableCell>
-    </TableRow>
+      </Table.Td>
+      <Table.Td>
+        <StatusBadge status={item.status} />
+      </Table.Td>
+      <Table.Td>
+        <Group gap="xs" wrap="nowrap">
+          {item.reportURL && (
+            <Button
+              variant="default"
+              size="xs"
+              leftSection={<FileText size={16} />}
+              onClick={() => window.open(item.reportURL, '_blank')}
+              aria-label="View report"
+            >
+              Report
+            </Button>
+          )}
+          {item.remarks && (
+            <Button
+              variant="default"
+              size="xs"
+              leftSection={<Eye size={16} />}
+              onClick={() => handleOpenRemarks(item)}
+              aria-label="View remarks"
+            >
+              Remarks
+            </Button>
+          )}
+        </Group>
+      </Table.Td>
+    </Table.Tr>
   );
 };
 
+// Rendered inside the modal, so its state resets each time the modal opens.
 const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
   const [selectedMonth, setSelectedMonth] = useState('');
   const [loading, setLoading] = useState(false);
@@ -264,75 +233,66 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
   };
 
   return (
-    <DialogContent className="w-full sm:max-w-[600px]">
-      <DialogHeader>
-        <DialogTitle>Generate Expense Report</DialogTitle>
-      </DialogHeader>
-      <div className="space-y-4">
-        {loading && (
-          <div className="flex justify-center items-center py-10 h-[200px]">
-            <Loader2 className="h-10 w-10 animate-spin text-gray-500" />
-          </div>
+    <Stack gap="md">
+      {loading && (
+        <Group justify="center" h={200}>
+          <Loader size="lg" />
+        </Group>
+      )}
+      {!pdfBase64 && !loading && (
+        <Select
+          label="Select Month"
+          placeholder="Select a Month"
+          data={months}
+          value={selectedMonth || null}
+          onChange={(value) => handleMonthChange(value || '')}
+          allowDeselect={false}
+        />
+      )}
+      {pdfBase64 && !loading && (
+        <Box
+          component="iframe"
+          src={`data:application/pdf;base64,${pdfBase64}`}
+          title="Expense Report Preview"
+          w="100%"
+          h={400}
+          style={{
+            border: '1px solid var(--mantine-color-default-border)',
+            borderRadius: 'var(--mantine-radius-md)',
+          }}
+        />
+      )}
+      <Group gap="xs">
+        {pdfBase64 && (
+          <>
+            <Button
+              onClick={onSubmitReport}
+              loading={loading}
+              disabled={!pdfBase64}
+            >
+              Submit Report
+            </Button>
+            <Button onClick={downloadReport} disabled={loading || !pdfBase64}>
+              Download Report
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => {
+                setPdfBase64(null);
+                setFileName('');
+                setSelectedMonth('');
+              }}
+              disabled={loading}
+            >
+              Generate New
+            </Button>
+          </>
         )}
-        {!pdfBase64 && !loading && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Select Month
-            </label>
-            <Select value={selectedMonth} onValueChange={handleMonthChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a Month" />
-              </SelectTrigger>
-              <SelectContent>
-                {months.map((month) => (
-                  <SelectItem key={month.value} value={month.value}>
-                    {month.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        {pdfBase64 && !loading && (
-          <div className="flex justify-center">
-            <iframe
-              src={`data:application/pdf;base64,${pdfBase64}`}
-              title="Expense Report Preview"
-              className="w-full h-[400px] border border-gray-200 rounded-lg"
-            />
-          </div>
-        )}
-        <div className="flex flex-col gap-2 md:flex-row ">
-          {pdfBase64 && (
-            <>
-              <Button onClick={onSubmitReport} disabled={loading || !pdfBase64}>
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
-                Submit Report
-              </Button>
-              <Button onClick={downloadReport} disabled={loading || !pdfBase64}>
-                Download Report
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setPdfBase64(null);
-                  setFileName('');
-                  setSelectedMonth('');
-                }}
-                disabled={loading}
-              >
-                Generate New
-              </Button>
-            </>
-          )}
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </DialogContent>
+        <Button variant="default" onClick={onClose}>
+          Cancel
+        </Button>
+      </Group>
+    </Stack>
   );
 };
 
@@ -396,70 +356,75 @@ const ExpenseReports = () => {
   };
 
   return (
-    <div className="min-h-screen p-4">
-      <div className="container mx-auto max-w-5xl">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Expense Reports</CardTitle>
-            <Dialog
-              open={generateModalOpen}
-              onOpenChange={setGenerateModalOpen}
-            >
-              <DialogTrigger asChild>
-                <Button>Create Expense Report</Button>
-              </DialogTrigger>
-              <GenerateExpenseReportModal
-                onClose={() => setGenerateModalOpen(false)}
-                onReportSubmitted={handleReportSubmitted}
-              />
-            </Dialog>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex justify-center items-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin" />
-              </div>
-            ) : fuelData.length === 0 ? (
-              <div className="text-center text-gray-600 py-8">
-                No expense reports found.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Month/Year</TableHead>
-                    {/* <TableHead>Territory</TableHead> */}
-                    <TableHead>ID & Date</TableHead>
-                    <TableHead>Receiver</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {fuelData.map((item) => (
-                    <ExpenseReportRow
-                      key={item._id}
-                      item={item}
-                      handleOpenRemarks={handleOpenRemarks}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+    <Container size="lg" px={0}>
+      <PageHeader
+        title="Expense Reports"
+        actions={
+          <Button onClick={() => setGenerateModalOpen(true)}>
+            Create Expense Report
+          </Button>
+        }
+      />
 
-      <Dialog open={remarksVisible} onOpenChange={setRemarksVisible}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Receiver's Remarks</DialogTitle>
-          </DialogHeader>
-          <p className="text-gray-700">{selectedItem?.remarks}</p>
+      <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'lg' }}>
+        {loading ? (
+          <Group justify="center" h={256}>
+            <Loader />
+          </Group>
+        ) : fuelData.length === 0 ? (
+          <EmptyState
+            icon={<FileText size={32} />}
+            title="No expense reports found."
+          />
+        ) : (
+          <Table.ScrollContainer minWidth={720}>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Month/Year</Table.Th>
+                  <Table.Th>ID & Date</Table.Th>
+                  <Table.Th>Receiver</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th>Actions</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {fuelData.map((item) => (
+                  <ExpenseReportRow
+                    key={item._id}
+                    item={item}
+                    handleOpenRemarks={handleOpenRemarks}
+                  />
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </Paper>
+
+      <Modal
+        opened={generateModalOpen}
+        onClose={() => setGenerateModalOpen(false)}
+        title={<Text fw={600}>Generate Expense Report</Text>}
+        size={600}
+      >
+        <GenerateExpenseReportModal
+          onClose={() => setGenerateModalOpen(false)}
+          onReportSubmitted={handleReportSubmitted}
+        />
+      </Modal>
+
+      <Modal
+        opened={remarksVisible}
+        onClose={() => setRemarksVisible(false)}
+        title={<Text fw={600}>Receiver's Remarks</Text>}
+      >
+        <Text size="sm">{selectedItem?.remarks}</Text>
+        <Group justify="flex-end" mt="lg">
           <Button onClick={() => setRemarksVisible(false)}>Close</Button>
-        </DialogContent>
-      </Dialog>
-    </div>
+        </Group>
+      </Modal>
+    </Container>
   );
 };
 

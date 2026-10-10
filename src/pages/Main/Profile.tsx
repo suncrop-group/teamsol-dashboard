@@ -3,13 +3,19 @@ import { useSelector } from 'react-redux';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import { selectLogo } from '@/redux/slices/ProjectSlice';
 import { callApi } from '@/api';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { toast } from 'sonner';
+import {
+  Button,
+  Center,
+  Container,
+  Image,
+  Paper,
+  PasswordInput,
+  Stack,
+  Tabs,
+  TextInput,
+} from '@mantine/core';
+import { toast } from '@/lib/toast';
 import fallbackLogo from '@/assets/images/logo.png'; // Place a default logo image here
-import { Label } from '@/components/ui/label';
 
 const ProfileSettings = () => {
   const user = useSelector(selectUser);
@@ -109,106 +115,100 @@ const ProfileSettings = () => {
     );
   };
 
+
   return (
-    <div className="min-h-screen flex justify-center items-center  py-8 px-2">
-      <Card className="w-full max-w-xl">
-        <CardContent className="py-8 px-4 sm:px-8">
-          <Tabs
-            value={activeTab}
-            onValueChange={setActiveTab}
-            className="w-full"
-          >
-            <TabsList className="flex justify-center mb-8">
-              <TabsTrigger value="profile">Profile</TabsTrigger>
-              <TabsTrigger value="change-password">Change Password</TabsTrigger>
-            </TabsList>
-            {/* Profile Tab */}
-            <TabsContent value="profile">
-              <div className="flex flex-col items-center mb-6">
-                <img
+    <Container size="xs" px={0}>
+      <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'xl' }}>
+        <Tabs value={activeTab} onChange={setActiveTab}>
+          <Tabs.List justify="center" mb="xl">
+            <Tabs.Tab value="profile">Profile</Tabs.Tab>
+            <Tabs.Tab value="change-password">Change Password</Tabs.Tab>
+          </Tabs.List>
+          {/* Profile Tab */}
+          <Tabs.Panel value="profile">
+            <Center mb="lg">
+              <Paper withBorder shadow="xs" p={4} radius="md">
+                <Image
                   src={imageError ? fallbackLogo : logoURL}
                   onError={() => setImageError(true)}
                   alt="Company Logo"
-                  className="w-24 h-24 object-contain shadow mb-4 border"
+                  w={96}
+                  h={96}
+                  fit="contain"
                 />
-              </div>
-              <form className="grid gap-4">
-                <div>
-                  <Label className="mb-2">Name</Label>
-                  <Input value={user?.name || ''} disabled />
-                </div>
-                {/* <Input value={user?.work_email || ''} disabled />
-                <Input value={user?.manager?.name || ''} disabled />
-                <Input value={user?.company?.name || ''} disabled />
-                <Input value={territories} disabled />
-                <Input value={warehouses} disabled />
-                <Input value={user?.vehicle?.name || 'N/A'} disabled /> */}
-                <div>
-                  <Label className="mb-2">Work Email</Label>
-                  <Input value={user?.work_email || ''} disabled />
-                </div>
-                <div>
-                  <Label className="mb-2">Manager</Label>
-                  <Input value={user?.manager?.name || ''} disabled />
-                </div>
-                <div>
-                  <Label className="mb-2">Company</Label>
-                  <Input value={user?.company?.name || ''} disabled />
-                </div>
-                <div>
-                  <Label className="mb-2">Territories</Label>
-                  <Input value={territories} disabled />
-                </div>
-                <div>
-                  <Label className="mb-2">Warehouses</Label>
-                  <Input value={warehouses} disabled />
-                </div>
-                <div>
-                  <Label className="mb-2">Vehicle</Label>
-                  <Input value={user?.vehicle?.name || 'N/A'} disabled />
-                </div>
-              </form>
-            </TabsContent>
-            {/* Change Password Tab */}
-            <TabsContent value="change-password">
-              <div className="flex flex-col items-center mb-6">
-                <img
+              </Paper>
+            </Center>
+            <form>
+              <Stack gap="md">
+                <TextInput label="Name" value={user?.name || ''} disabled />
+                <TextInput
+                  label="Work Email"
+                  value={user?.work_email || ''}
+                  disabled
+                />
+                <TextInput
+                  label="Manager"
+                  value={user?.manager?.name || ''}
+                  disabled
+                />
+                <TextInput
+                  label="Company"
+                  value={user?.company?.name || ''}
+                  disabled
+                />
+                <TextInput label="Territories" value={territories} disabled />
+                <TextInput label="Warehouses" value={warehouses} disabled />
+                <TextInput
+                  label="Vehicle"
+                  value={user?.vehicle?.name || 'N/A'}
+                  disabled
+                />
+              </Stack>
+            </form>
+          </Tabs.Panel>
+          {/* Change Password Tab */}
+          <Tabs.Panel value="change-password">
+            <Center mb="lg">
+              <Paper withBorder shadow="xs" p={4} radius="md">
+                <Image
                   src={imageError ? fallbackLogo : logoURL}
                   onError={() => setImageError(true)}
                   alt="Company Logo"
-                  className="w-20 h-20 object-contain shadow mb-4 border"
+                  w={80}
+                  h={80}
+                  fit="contain"
                 />
-              </div>
-              <form className="grid gap-4" autoComplete="off">
-                <Input
-                  type="password"
+              </Paper>
+            </Center>
+            <form autoComplete="off">
+              <Stack gap="md">
+                <PasswordInput
+                  aria-label="Current password"
                   placeholder="Enter your current password"
                   value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  onChange={(e) => setCurrentPassword(e.currentTarget.value)}
                 />
-                <Input
-                  type="password"
+                <PasswordInput
+                  aria-label="New password"
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.currentTarget.value)}
                 />
-
-                <Input
-                  type="password"
+                <PasswordInput
+                  aria-label="Confirm password"
                   placeholder="Confirm your password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={(e) => setConfirmPassword(e.currentTarget.value)}
                 />
-
-                <Button className="w-full mt-2" onClick={handleChangePassword}>
+                <Button type="submit" fullWidth onClick={handleChangePassword}>
                   Change Password
                 </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
-    </div>
+              </Stack>
+            </form>
+          </Tabs.Panel>
+        </Tabs>
+      </Paper>
+    </Container>
   );
 };
 

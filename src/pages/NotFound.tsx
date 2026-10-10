@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Button, Center, Paper, Stack, Text, Title } from '@mantine/core';
 import { selectIsAuthenticated } from '@/redux/slices/AuthSlice';
 import { useSelector } from 'react-redux';
 
@@ -9,29 +8,25 @@ const NotFound = () => {
   const isAuth = useSelector(selectIsAuthenticated);
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-4xl font-bold text-center text-gray-800">
+    <Center mih="100vh" p="md">
+      <Paper withBorder shadow="sm" p="xl" w="100%" maw={440}>
+        <Stack align="center" gap="sm">
+          <Title order={1} fz={40}>
             404
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-center space-y-4">
-          <h2 className="text-xl font-semibold text-gray-700">
-            Page Not Found
-          </h2>
-          <p className="text-gray-500">
+          </Title>
+          <Title order={3}>Page Not Found</Title>
+          <Text c="dimmed" ta="center">
             Sorry, the page you're looking for doesn't exist or has been moved.
-          </p>
+          </Text>
           <Button
+            mt="sm"
             onClick={() => navigate(`${isAuth ? '/' : '/auth'}`)}
-            className="mt-4"
           >
             {isAuth ? 'Go to Dashboard' : 'Sign In'}
           </Button>
-        </CardContent>
-      </Card>
-    </div>
+        </Stack>
+      </Paper>
+    </Center>
   );
 };
 

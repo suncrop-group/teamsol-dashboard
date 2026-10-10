@@ -1,11 +1,15 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-import { logout, setOdooAccessToken } from '../redux/slices/AuthSlice';
+import { logout } from '../redux/slices/AuthSlice';
 import { setMaintenanceMode } from '../redux/slices/SystemSlice';
 import { store } from '../redux/store';
 export const AUTHORIZE = 'AUTHORIZE';
 export const NETWORK_ERROR = 'NETWORK ERROR';
-export const BASE_URL = 'https://teamsol-api-serverless.suncropgroup.com.pk';
-import { toast } from 'sonner';
+// VITE_API_URL points a local build at another backend; production builds
+// leave it unset.
+export const BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  'https://teamsol-api-serverless.suncropgroup.com.pk';
+import { toast } from '@/lib/toast';
 
 export const Method = {
   GET: 'GET',
@@ -25,7 +29,6 @@ export const Status = {
 const defaultHeaders: {
   Accept: string;
   'Content-Type': string;
-  Cookie?: string;
   Authorization?: string;
 } = {
   Accept: 'application/json',
@@ -50,11 +53,6 @@ export const callApi = async (
   try {
     const url = BASE_URL + endPoint;
     const token = store.getState().auth.user?.token;
-    const { odooAccessToken } = store.getState().auth;
-
-    if (odooAccessToken) {
-      defaultHeaders['Cookie'] = `session_id=${odooAccessToken}`;
-    }
 
     if (multipart) {
       defaultHeaders['Content-Type'] = 'multipart/form-data';
@@ -111,170 +109,6 @@ export const callApi = async (
   }
 };
 
-const getServerToken = async () => {
-  const { odooAccessToken, tokenExpiry } = store.getState().auth;
-
-  // Check if token exists and has not expired
-  if (odooAccessToken && tokenExpiry && new Date().getTime() < tokenExpiry) {
-    return {
-      success: true,
-      data: odooAccessToken,
-    };
-  }
-
-  // Clear the old token if expired or missing
-  store.dispatch(
-    setOdooAccessToken({
-      access_token: '',
-      expires_in: 0,
-    }),
-  );
-
-  try {
-    const response = await fetch(
-      `${BASE_URL}/web/authenticate-odoo-server?id=${
-        store.getState().project.setOdooCred.id
-      }`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: `session_id=${odooAccessToken}`,
-        },
-      },
-    );
-
-    const responseJson = await response.json();
-
-    if (!responseJson.data.cookie) {
-      return {
-        success: false,
-        data: null,
-      };
-    }
-
-    // if responnse have cookie then set the cookie in browser
-    // document.cookie = `session_id=${responseJson.data.cookie}; path=/; max-age=${responseJson.data.expires}; secure; SameSite=Lax`;
-
-    store.dispatch(
-      setOdooAccessToken({
-        access_token: responseJson.data.cookie,
-        expires_in: responseJson.data.expires,
-      }),
-    );
-
-    // set the cookie if needed
-
-    return {
-      success: true,
-      data: responseJson.data.cookie,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      data: error,
-    };
-  }
-};
-
-export const callServerAPI = async (
-  method: string,
-  endPoint: string,
-  bodyParams: Record<string, unknown>,
-  onSuccess: (response: Record<string, unknown>) => void,
-  onError: (error: unknown) => void,
-  multipart: boolean = false,
-  excludeApi: boolean = false,
-) => {
-  try {
-    const isConnected = navigator.onLine;
-    const odooAdmin = store.getState().auth.odooAdmin;
-
-    if (!isConnected) return;
-
-    const ODOO_URL = `${store.getState().project.setOdooCred.url}/${
-      excludeApi ? '' : 'api'
-    }`;
-
-    const odooAuth = await getServerToken();
-
-    if (!odooAuth.success || !odooAuth.data) {
-      toast.error(
-        'Unable to communicate with Server. Please contact your administrator.',
-      );
-      onError(
-        'Unable to communicate with server. Please contact your administrator ASAP!',
-      );
-      return;
-    }
-
-    const url = ODOO_URL + endPoint;
-
-    const defaultHeaders: Record<string, string> = {};
-    if (multipart) {
-      defaultHeaders['Content-Type'] = 'multipart/form-data';
-    } else {
-      defaultHeaders['Content-Type'] = 'application/json';
-    }
-    defaultHeaders['Cookie'] = `session_id=${odooAuth.data}`;
-
-    if (bodyParams?.data) {
-      (bodyParams.data as Record<string, unknown>).user_id = odooAdmin?.id;
-    } else {
-      bodyParams.user_id = odooAdmin?.id;
-    }
-
-    const requestPayload = {
-      method,
-      url,
-      headers: defaultHeaders,
-      bodyParams: bodyParams,
-    };
-
-    const fetchObject: RequestInit = {
-      method: 'POST',
-      headers: defaultHeaders,
-      body: JSON.stringify(requestPayload),
-    };
-
-    const response = await fetch(`${BASE_URL}/web/call-odoo-api`, fetchObject);
-
-    const contentType = response.headers.get('Content-Type');
-    let responseJson: { maintenance?: boolean; message?: string } & Record<
-      string,
-      unknown
-    > = {};
-    if (contentType && contentType.includes('application/json')) {
-      responseJson = await response.json();
-    } else {
-      // If the response is not JSON, throw an error with the response text
-      const errorText = await response.text();
-      throw new Error(`Expected JSON, but got: ${errorText}`);
-    }
-
-    if (response?.status < 400) {
-      onSuccess(responseJson);
-    } else if (response?.status === 503 && responseJson?.maintenance) {
-      // System is under maintenance
-      store.dispatch(
-        setMaintenanceMode({
-          isUnderMaintenance: true,
-          message: responseJson?.message,
-          // @ts-ignore
-          maintenanceUntil: responseJson?.maintenanceUntil,
-        }),
-      );
-
-      onError(responseJson);
-    } else {
-      onError(responseJson);
-    }
-  } catch (error) {
-    onError(error);
-  }
-};
-
-// Helper function to convert object to FormData
 export const convertToFormData = (data: Record<string, unknown>): FormData => {
   const formData = new FormData();
   Object.entries(data).forEach(([key, value]) => {

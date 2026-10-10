@@ -1,32 +1,27 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
+  Badge,
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Container,
+  Divider,
+  Group,
+  Image,
+  Loader,
+  Modal,
+  Paper,
+  Stack,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core';
 import {
   Filter,
-  ChevronLeft,
-  Loader2,
   Search,
   Plus,
   Calendar,
@@ -36,54 +31,96 @@ import {
   CheckCircle2,
   XCircle,
   Hash,
-  Eye,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import dayjs from 'dayjs';
 import { callApi } from '@/api';
+import { isFailed, isUnsynced, recordRef, useQueuedRefresh } from '@/api/v2';
 import { resetProducts } from '@/redux/slices/OrderCreationSlice';
-import { DateFilter } from '@/components/DateFilter';
-import type { DateRange } from 'react-day-picker';
+import { DateFilter, type DateRange } from '@/components/DateFilter';
+import {
+  EmptyState,
+  FailedActions,
+  PageHeader,
+  StatusBadge,
+} from '@/components/app';
 
-const statusStyles = {
-  sent: 'bg-green-100 text-green-800 hover:bg-green-200',
-  pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  canceled: 'bg-red-100 text-red-800 hover:bg-red-200',
-  cancelled: 'bg-red-100 text-red-800 hover:bg-red-200',
-  quotation: 'bg-blue-100 text-blue-800 hover:bg-blue-200',
-  approved: 'bg-green-100 text-green-800 hover:bg-green-200',
-  draft: 'bg-red-100 text-red-800 hover:bg-red-200',
-  confirmed: 'bg-green-100 text-green-800 hover:bg-green-200',
-  approval: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  approve: 'bg-green-100 text-green-800 hover:bg-green-200',
-  submit: 'bg-green-100 text-green-800 hover:bg-green-200',
-  'to report': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  submitted: 'bg-blue-100 text-blue-800 hover:bg-blue-200',
-  done: 'bg-green-100 text-green-800 hover:bg-green-200',
-  rejected: 'bg-red-100 text-red-800 hover:bg-red-200',
-  refuse: 'bg-red-100 text-red-800 hover:bg-red-200',
-  refused: 'bg-red-100 text-red-800 hover:bg-red-200',
-  announced: 'bg-green-100 text-green-800 hover:bg-green-200',
-  new: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  completed: 'bg-green-100 text-green-800 hover:bg-green-200',
-  closed: 'bg-red-100 text-red-800 hover:bg-red-200',
-  'in progress': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  'in review': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  'in process': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  'in preparation': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  'in transit': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
+const RESOURCE = '/v2/events';
+
+const EventBadges = ({ item, size }: { item; size?: 'xs' | 'sm' }) => (
+  <>
+    {/* An event that is not in Odoo yet has no stage; show where it is. */}
+    {isUnsynced(item) ? (
+      <StatusBadge status={item.status} size={size} />
+    ) : (
+      <StatusBadge status={item?.event_stage?.name} size={size} />
+    )}
+    <StatusBadge
+      status={item?.verified ? 'Verified' : 'Unverified'}
+      size={size}
+      leftSection={
+        item?.verified ? <CheckCircle2 size={12} /> : <XCircle size={12} />
+      }
+    />
+    {item?.rsmAttended && (
+      <Badge
+        color="green"
+        variant="light"
+        tt="capitalize"
+        w="fit-content"
+        size={size}
+        leftSection={<Users size={12} />}
+      >
+        Attended
+      </Badge>
+    )}
+  </>
+);
+
+// A failed event: why Odoo refused it, and the ways out. Clicks stay inside,
+// so they do not open the detail page behind it.
+const Failed = ({ item, onChanged }: { item; onChanged: () => void }) => {
+  const navigate = useNavigate();
+  if (!isFailed(item)) return null;
+  return (
+    <Box onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
+      <FailedActions
+        item={item}
+        resource={RESOURCE}
+        onEdit={() => navigate('/add-rm-event', { state: { record: item } })}
+        onChanged={onChanged}
+      />
+    </Box>
+  );
 };
 
-const EventsCard = ({ item, toggleEventImages, setToggleEventImages }) => {
+const ImagePreviewModal = ({
+  src,
+  onClose,
+}: {
+  src: string;
+  onClose: () => void;
+}) => (
+  <Modal opened onClose={onClose} size="xl" padding="xs">
+    <Image src={src} alt="Event Image" mah="85vh" fit="contain" radius="md" />
+  </Modal>
+);
+
+const EventsCard = ({
+  item,
+  toggleEventImages,
+  setToggleEventImages,
+  onChanged,
+}) => {
   const navigate = useNavigate();
   const [selectedImage, setSelectedImage] = useState(null);
 
   const toggleImages = () => {
     setToggleEventImages((prev) => {
-      if (prev.includes(item.id)) {
-        return prev.filter((id) => id !== item.id);
+      if (prev.includes(item._id)) {
+        return prev.filter((id) => id !== item._id);
       } else {
-        return [...prev, item.id];
+        return [...prev, item._id];
       }
     });
   };
@@ -91,171 +128,134 @@ const EventsCard = ({ item, toggleEventImages, setToggleEventImages }) => {
   return (
     <>
       <Card
-        className="hover:shadow-lg transition-all duration-200 cursor-pointer border-l-4 border-l-blue-500 md:hidden"
-        onClick={() => navigate(`/event-details-rm/${item.id}`)}
+        withBorder
+        padding="md"
+        style={{ cursor: 'pointer' }}
+        onClick={() => navigate(`/event-details-rm/${item._id}`)}
       >
-        <CardHeader className="pb-3">
-          <div className="flex justify-between items-start gap-3">
-            <CardTitle className="text-base font-semibold flex-1">
-              #{item?.id} - {item?.name}
-            </CardTitle>
-            <div className="flex flex-col gap-1.5 items-end">
-              <Badge
-                className={`${
-                  statusStyles[item?.event_stage?.name.toLowerCase()]
-                } border-0 text-xs capitalize`}
-              >
-                {item?.event_stage?.name}
-              </Badge>
-              <Badge
-                className={`${
-                  statusStyles[item?.verified ? 'sent' : 'cancelled']
-                } border-0 text-xs flex items-center gap-1`}
-              >
-                {item?.verified ? (
-                  <>
-                    <CheckCircle2 className="h-3 w-3" />
-                    Verified
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="h-3 w-3" />
-                    Unverified
-                  </>
-                )}
-              </Badge>
-              {item?.rsmAttended && (
-                <Badge
-                  className={`${statusStyles.sent} border-0 text-xs flex items-center gap-1`}
-                >
-                  <Users className="h-3 w-3" />
-                  Attended
-                </Badge>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {/* Location */}
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <MapPin className="h-4 w-4 text-gray-400" />
-            <span>
-              {item?.region?.name} - {item?.territory?.name}
-            </span>
-          </div>
+        <Stack gap="sm">
+          <Group justify="space-between" align="flex-start" wrap="nowrap">
+            <Text fw={600} flex={1}>
+              {recordRef(item)} - {item?.name}
+            </Text>
+            <Stack gap={4} align="flex-end">
+              <EventBadges item={item} size="sm" />
+            </Stack>
+          </Group>
 
-          {/* Date */}
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Calendar className="h-4 w-4 text-gray-400" />
-            <span>
-              {item?.date_begin} - {item?.date_end}
-            </span>
-          </div>
+          <Stack gap={6}>
+            {/* Location */}
+            <Group gap="xs" c="dimmed" wrap="nowrap">
+              <MapPin size={16} style={{ flexShrink: 0 }} />
+              <Text size="sm">
+                {item?.region?.name} - {item?.territory?.name}
+              </Text>
+            </Group>
 
-          {/* Products */}
-          {item?.demo_products?.length > 0 && (
-            <div className="text-sm">
-              <span className="font-medium text-gray-700">Products: </span>
-              <span className="text-gray-600">
+            {/* Date */}
+            <Group gap="xs" c="dimmed" wrap="nowrap">
+              <Calendar size={16} style={{ flexShrink: 0 }} />
+              <Text size="sm">
+                {item?.date_begin} - {item?.date_end}
+              </Text>
+            </Group>
+
+            {/* Products */}
+            {item?.demo_products?.length > 0 && (
+              <Text size="sm">
+                <Text span fw={500}>
+                  Products:{' '}
+                </Text>
                 {item?.demo_products?.map((product) => product.name).join(', ')}
-              </span>
-            </div>
-          )}
+              </Text>
+            )}
 
-          {/* Crops */}
-          {item?.crops?.length > 0 && (
-            <div className="text-sm">
-              <span className="font-medium text-gray-700">Crop: </span>
-              <span className="text-gray-600">
+            {/* Crops */}
+            {item?.crops?.length > 0 && (
+              <Text size="sm">
+                <Text span fw={500}>
+                  Crop:{' '}
+                </Text>
                 {item?.crops?.map((crop) => crop.name).join(', ')}
-              </span>
-            </div>
-          )}
+              </Text>
+            )}
 
-          {/* Dealers */}
-          {item?.dealers?.length > 0 && (
-            <div className="text-sm">
-              <span className="font-medium text-gray-700">Dealers: </span>
-              <span className="text-gray-600">
+            {/* Dealers */}
+            {item?.dealers?.length > 0 && (
+              <Text size="sm">
+                <Text span fw={500}>
+                  Dealers:{' '}
+                </Text>
                 {item?.dealers?.map((dealer) => dealer.name).join(', ')}
-              </span>
-            </div>
-          )}
+              </Text>
+            )}
 
-          {/* Event Type */}
-          <div className="text-sm">
-            <span className="font-medium text-gray-700">Event Type: </span>
-            <span className="text-gray-600">{item?.event_type?.name}</span>
-          </div>
+            {/* Event Type */}
+            <Text size="sm">
+              <Text span fw={500}>
+                Event Type:{' '}
+              </Text>
+              {item?.event_type?.name}
+            </Text>
+          </Stack>
+
+          <Failed item={item} onChanged={onChanged} />
 
           {/* Image Toggle Button */}
           {item?.images && item.images.length > 0 && (
-            <div className="pt-2 border-t">
+            <Box>
               <Button
-                variant="ghost"
-                size="sm"
+                variant="subtle"
+                size="compact-sm"
+                leftSection={<ImageIcon size={16} />}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleImages();
                 }}
-                className="text-blue-600 hover:text-blue-700 p-0 h-auto"
               >
-                <ImageIcon className="h-4 w-4 mr-1" />
-                {toggleEventImages.includes(item.id)
+                {toggleEventImages.includes(item._id)
                   ? `Hide Image${item.images.length > 1 ? 's' : ''}`
                   : `Show Image${item.images.length > 1 ? 's' : ''}`}{' '}
                 ({item.images.length})
               </Button>
-            </div>
+            </Box>
           )}
 
           {/* Event Image Gallery */}
           {item?.images &&
             item.images.length > 0 &&
-            toggleEventImages.includes(item.id) && (
-              <div className="pt-2">
-                <div className="flex flex-wrap gap-2">
-                  {item.images.map((imageUrl, index) => (
-                    <div
-                      key={index}
-                      className="relative group"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                    >
-                      <img
-                        src={imageUrl}
-                        alt={`Event image ${index + 1}`}
-                        className="w-20 h-20 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity border"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
+            toggleEventImages.includes(item._id) && (
+              <Group gap="xs">
+                {item.images.map((imageUrl, index) => (
+                  <Image
+                    key={index}
+                    src={imageUrl}
+                    alt={`Event image ${index + 1}`}
+                    w={80}
+                    h={80}
+                    fit="cover"
+                    radius="md"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedImage(imageUrl);
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ))}
+              </Group>
             )}
-        </CardContent>
+        </Stack>
       </Card>
 
       {/* Image Modal */}
       {selectedImage && (
-        <Dialog
-          open={!!selectedImage}
-          onOpenChange={() => setSelectedImage(null)}
-        >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-2">
-            <div className="relative">
-              <img
-                src={selectedImage}
-                alt="Event Image"
-                className="w-full h-auto max-h-[85vh] object-contain rounded-lg"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ImagePreviewModal
+          src={selectedImage}
+          onClose={() => setSelectedImage(null)}
+        />
       )}
     </>
   );
@@ -266,184 +266,156 @@ const EventsTableRow = ({
   toggleEventImages,
   setToggleEventImages,
   setSelectedImage,
+  onChanged,
 }) => {
   const navigate = useNavigate();
 
   const toggleImages = (e) => {
     e.stopPropagation();
     setToggleEventImages((prev) => {
-      if (prev.includes(item.id)) {
-        return prev.filter((id) => id !== item.id);
+      if (prev.includes(item._id)) {
+        return prev.filter((id) => id !== item._id);
       } else {
-        return [...prev, item.id];
+        return [...prev, item._id];
       }
     });
   };
 
   return (
     <>
-      <TableRow
-        className="hover: transition-colors cursor-pointer"
-        onClick={() => navigate(`/event-details-rm/${item.id}`)}
+      <Table.Tr
+        style={{ cursor: 'pointer' }}
+        onClick={() => navigate(`/event-details-rm/${item._id}`)}
       >
-        <TableCell>
-          <div className="flex items-center gap-2">
-            <Hash className="h-4 w-4 text-gray-400" />
-            <div>
-              <div className="font-medium">#{item?.id}</div>
-              <div
-                className="text-xs text-gray-500 max-w-[150px] truncate"
-                title={item?.name}
-              >
+        <Table.Td>
+          <Group gap="xs" wrap="nowrap">
+            <Hash size={16} color="var(--mantine-color-gray-5)" />
+            <Box>
+              <Text fw={500}>{recordRef(item)}</Text>
+              <Text size="xs" c="dimmed" maw={150} truncate title={item?.name}>
                 {item?.name}
-              </div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-start gap-2">
-            <MapPin className="h-4 w-4 text-blue-600 mt-0.5" />
-            <div>
-              <div className="font-medium">{item?.region?.name}</div>
-              <div className="text-xs text-gray-500">
+              </Text>
+            </Box>
+          </Group>
+        </Table.Td>
+        <Table.Td>
+          <Group gap="xs" wrap="nowrap" align="flex-start">
+            <MapPin
+              size={16}
+              color="var(--mantine-color-blue-6)"
+              style={{ flexShrink: 0, marginTop: 2 }}
+            />
+            <Box>
+              <Text fw={500}>{item?.region?.name}</Text>
+              <Text size="xs" c="dimmed">
                 {item?.territory?.name}
-              </div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="space-y-1 text-sm">
+              </Text>
+            </Box>
+          </Group>
+        </Table.Td>
+        <Table.Td>
+          <Stack gap={4}>
             {item?.demo_products?.length > 0 && (
-              <div className="flex items-start gap-1">
-                <span className="font-medium text-xs text-gray-500">
+              <Group gap={4} wrap="nowrap" align="flex-start">
+                <Text size="xs" fw={500} c="dimmed">
                   Products:
-                </span>
-                <span
-                  className="text-xs truncate max-w-[150px]"
+                </Text>
+                <Text
+                  size="xs"
+                  maw={150}
+                  truncate
                   title={item?.demo_products?.map((p) => p.name).join(', ')}
                 >
                   {item?.demo_products?.map((p) => p.name).join(', ')}
-                </span>
-              </div>
+                </Text>
+              </Group>
             )}
             {item?.crops?.length > 0 && (
-              <div className="flex items-start gap-1">
-                <span className="font-medium text-xs text-gray-500">Crop:</span>
-                <span
-                  className="text-xs truncate max-w-[150px]"
+              <Group gap={4} wrap="nowrap" align="flex-start">
+                <Text size="xs" fw={500} c="dimmed">
+                  Crop:
+                </Text>
+                <Text
+                  size="xs"
+                  maw={150}
+                  truncate
                   title={item?.crops?.map((c) => c.name).join(', ')}
                 >
                   {item?.crops?.map((c) => c.name).join(', ')}
-                </span>
-              </div>
+                </Text>
+              </Group>
             )}
-            <div className="flex items-start gap-1">
-              <span className="font-medium text-xs text-gray-500">Type:</span>
-              <span className="text-xs">{item?.event_type?.name}</span>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Calendar className="h-4 w-4" />
-            <div>
-              <div>{item?.date_begin}</div>
-              <div className="text-xs text-gray-400">to {item?.date_end}</div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex flex-col gap-1 items-start">
-            <Badge
-              className={`${
-                statusStyles[item?.event_stage?.name.toLowerCase()]
-              } border-0 text-[10px] capitalize`}
-            >
-              {item?.event_stage?.name}
-            </Badge>
-            <Badge
-              className={`${
-                statusStyles[item?.verified ? 'sent' : 'cancelled']
-              } border-0 text-[10px] flex items-center gap-1`}
-            >
-              {item?.verified ? (
-                <>
-                  <CheckCircle2 className="h-3 w-3" />
-                  Verified
-                </>
-              ) : (
-                <>
-                  <XCircle className="h-3 w-3" />
-                  Unverified
-                </>
-              )}
-            </Badge>
-            {item?.rsmAttended && (
-              <Badge
-                className={`${statusStyles.sent} border-0 text-[10px] flex items-center gap-1`}
-              >
-                <Users className="h-3 w-3" />
-                Attended
-              </Badge>
-            )}
-          </div>
-        </TableCell>
-        <TableCell>
+            <Group gap={4} wrap="nowrap" align="flex-start">
+              <Text size="xs" fw={500} c="dimmed">
+                Type:
+              </Text>
+              <Text size="xs">{item?.event_type?.name}</Text>
+            </Group>
+          </Stack>
+        </Table.Td>
+        <Table.Td>
+          <Group gap="xs" wrap="nowrap" c="dimmed">
+            <Calendar size={16} style={{ flexShrink: 0 }} />
+            <Box>
+              <Text size="sm">{item?.date_begin}</Text>
+              <Text size="xs">to {item?.date_end}</Text>
+            </Box>
+          </Group>
+        </Table.Td>
+        <Table.Td maw={280}>
+          <Stack gap={4} align="flex-start">
+            <EventBadges item={item} size="sm" />
+            <Failed item={item} onChanged={onChanged} />
+          </Stack>
+        </Table.Td>
+        <Table.Td>
           {item?.images && item.images.length > 0 ? (
             <Button
-              variant="ghost"
-              size="sm"
+              variant="subtle"
+              size="compact-sm"
+              leftSection={<ImageIcon size={16} />}
               onClick={toggleImages}
-              className="text-blue-600 hover:text-blue-700 p-0 h-auto"
             >
-              <ImageIcon className="h-4 w-4 mr-1" />
-              {toggleEventImages.includes(item.id) ? 'Hide' : 'Show'} (
+              {toggleEventImages.includes(item._id) ? 'Hide' : 'Show'} (
               {item.images.length})
             </Button>
           ) : (
-            <span className="text-xs text-gray-400">No images</span>
+            <Text size="xs" c="dimmed">
+              No images
+            </Text>
           )}
-        </TableCell>
-      </TableRow>
+        </Table.Td>
+      </Table.Tr>
 
       {/* Image Gallery Row (conditionally rendered) */}
       {item?.images &&
         item.images.length > 0 &&
-        toggleEventImages.includes(item.id) && (
-          <TableRow>
-            <TableCell colSpan={6} className="p-4 border-b">
-              <div className="flex flex-wrap gap-2">
+        toggleEventImages.includes(item._id) && (
+          <Table.Tr>
+            <Table.Td colSpan={6} p="md">
+              <Group gap="xs">
                 {item.images.map((imageUrl, index) => (
-                  <div key={index} className="relative group">
-                    <img
-                      src={imageUrl}
-                      alt={`Event image ${index + 1}`}
-                      className="w-20 h-20 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity border bg-white"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                    <div
-                      className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 rounded-md flex items-center justify-center cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedImage(imageUrl);
-                      }}
-                    >
-                      <Eye
-                        className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                        size={16}
-                      />
-                    </div>
-                  </div>
+                  <Image
+                    key={index}
+                    src={imageUrl}
+                    alt={`Event image ${index + 1}`}
+                    w={80}
+                    h={80}
+                    fit="cover"
+                    radius="md"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedImage(imageUrl);
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
                 ))}
-              </div>
-            </TableCell>
-          </TableRow>
+              </Group>
+            </Table.Td>
+          </Table.Tr>
         )}
     </>
   );
@@ -464,27 +436,45 @@ const EventsForRM = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const fetchSalesOrders = () => {
-    dispatch(resetProducts());
-    const onSuccess = (response) => {
-      setLoading(false);
-      response.data.sort(
-        (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
-      );
-      setEvents(response.data);
-    };
+  // `quiet` reloads in place, without swapping the list for a spinner.
+  const fetchSalesOrders = (quiet = false) => {
+    if (!quiet) dispatch(resetProducts());
     const onError = () => {
       setLoading(false);
-      toast.error('Failed to fetch events');
+      if (!quiet) toast.error('Failed to fetch events');
     };
-    setLoading(true);
-    callApi('GET', '/events/employee', null, onSuccess, onError);
+    // The list is searched and grouped here, so every page is loaded.
+    const loadPage = (page, loaded) => {
+      callApi(
+        'GET',
+        `${RESOURCE}?limit=200&page=${page}`,
+        null,
+        (response) => {
+          const all = [...loaded, ...(response.data || [])];
+          if (response.pagination?.hasMore) {
+            loadPage(page + 1, all);
+            return;
+          }
+          setLoading(false);
+          all.sort(
+            (a, b) =>
+              dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+          );
+          setEvents(all);
+        },
+        onError,
+      );
+    };
+    if (!quiet) setLoading(true);
+    loadPage(1, []);
   };
 
   useEffect(() => {
     fetchSalesOrders();
     // eslint-disable-next-line
   }, []);
+
+  useQueuedRefresh(events, () => fetchSalesOrders(true));
 
   const groupByTerritory = () => {
     const grouped = events.reduce((acc, event) => {
@@ -545,7 +535,7 @@ const EventsForRM = () => {
       item?.event_type?.name
         ?.toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
-      item?.id.toString().includes(searchQuery);
+      recordRef(item).toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesDate =
       !(selectedDateRange?.from && selectedDateRange?.to) ||
@@ -586,223 +576,186 @@ const EventsForRM = () => {
           .filter((item) => item.data.length > 0);
 
   return (
-    <div className="min-h-screen  p-4">
-      <div className="container mx-auto max-w-7xl">
-        <Card className="shadow-lg border-0">
-          <CardHeader className="bg-white border-b">
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => navigate(-1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <CardTitle className="text-2xl font-bold flex-1">
-                  Regional Manager Events
-                </CardTitle>
-                {events.length > 0 && (
-                  <Button onClick={() => navigate('/add-rm-event')}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Event
-                  </Button>
-                )}
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="Search by event name, region, territory, or ID..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                {events.length > 0 && (
-                  <Dialog
-                    open={filterModalVisible}
-                    onOpenChange={setFilterModalVisible}
-                  >
-                    <DialogTrigger asChild>
-                      <Button variant="outline">
-                        <Filter className="h-4 w-4 mr-2" />
-                        Filter
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-md">
-                      <DialogHeader>
-                        <DialogTitle>Filter Events</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <DateFilter
-                          selectedRange={selectedDateRange}
-                          onSelect={setSelectedDateRange}
-                          triggerMode="input"
-                          className="w-full"
-                        />
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="territory"
-                              checked={selectedFilters.includes('territory')}
-                              onCheckedChange={(checked) =>
-                                setSelectedFilters((prev) =>
-                                  checked
-                                    ? [...prev, 'territory']
-                                    : prev.filter((f) => f !== 'territory'),
-                                )
-                              }
-                            />
-                            <Label htmlFor="territory">
-                              Group by Territory
-                            </Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="stages"
-                              checked={selectedFilters.includes('stages')}
-                              onCheckedChange={(checked) =>
-                                setSelectedFilters((prev) =>
-                                  checked
-                                    ? [...prev, 'stages']
-                                    : prev.filter((f) => f !== 'stages'),
-                                )
-                              }
-                            />
-                            <Label htmlFor="stages">
-                              Group by Event Stages
-                            </Label>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => {
-                            setFilterBy({
-                              territory: selectedFilters.includes('territory'),
-                              stages: selectedFilters.includes('stages'),
-                            });
-                            setFilterModalVisible(false);
-                          }}
-                        >
-                          Apply Filter
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6">
-            {loading ? (
-              <div className="flex justify-center items-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {flattenedSections.map((section, index) => (
-                  <div key={index}>
-                    {section.title && (
-                      <h2 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">
-                        {section.title}
-                      </h2>
-                    )}
-                    {/* Desktop Table View */}
-                    <div className="hidden md:block overflow-x-auto bg-white rounded-lg shadow border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="font-semibold">
-                              ID / Name
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Location
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Details
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Date
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Status
-                            </TableHead>
-                            <TableHead className="font-semibold">
-                              Images
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {section.data.map((item, idx) => (
-                            <EventsTableRow
-                              key={`desktop-${item.id}-${idx}`}
-                              item={item}
-                              toggleEventImages={toggleEventImages}
-                              setToggleEventImages={setToggleEventImages}
-                              setSelectedImage={setSelectedImage}
-                            />
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+    <Container size="xl" px={0}>
+      <PageHeader
+        title="Regional Manager Events"
+        back
+        actions={
+          events.length > 0 && (
+            <Button
+              leftSection={<Plus size={16} />}
+              onClick={() => navigate('/add-rm-event')}
+            >
+              Add Event
+            </Button>
+          )
+        }
+      />
 
-                    {/* Mobile Card View */}
-                    <div className="grid grid-cols-1 md:hidden gap-4 mt-4 md:mt-0">
+      <Paper withBorder shadow="sm" p={{ base: 'md', sm: 'lg' }}>
+        <Group gap="sm" mb="lg" wrap="nowrap">
+          <TextInput
+            flex={1}
+            placeholder="Search by event name, region, territory, or ID..."
+            leftSection={<Search size={16} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.currentTarget.value)}
+          />
+          {events.length > 0 && (
+            <>
+              <Button
+                variant="default"
+                leftSection={<Filter size={16} />}
+                onClick={() => setFilterModalVisible(true)}
+              >
+                Filter
+              </Button>
+              <Modal
+                opened={filterModalVisible}
+                onClose={() => setFilterModalVisible(false)}
+                title={<Text fw={600}>Filter Events</Text>}
+              >
+                <Stack gap="md">
+                  <DateFilter
+                    selectedRange={selectedDateRange}
+                    onSelect={setSelectedDateRange}
+                    triggerMode="input"
+                  />
+                  <Stack gap="xs">
+                    <Checkbox
+                      label="Group by Territory"
+                      checked={selectedFilters.includes('territory')}
+                      onChange={(e) => {
+                        const checked = e.currentTarget.checked;
+                        setSelectedFilters((prev) =>
+                          checked
+                            ? [...prev, 'territory']
+                            : prev.filter((f) => f !== 'territory'),
+                        );
+                      }}
+                    />
+                    <Checkbox
+                      label="Group by Event Stages"
+                      checked={selectedFilters.includes('stages')}
+                      onChange={(e) => {
+                        const checked = e.currentTarget.checked;
+                        setSelectedFilters((prev) =>
+                          checked
+                            ? [...prev, 'stages']
+                            : prev.filter((f) => f !== 'stages'),
+                        );
+                      }}
+                    />
+                  </Stack>
+                  <Button
+                    onClick={() => {
+                      setFilterBy({
+                        territory: selectedFilters.includes('territory'),
+                        stages: selectedFilters.includes('stages'),
+                      });
+                      setFilterModalVisible(false);
+                    }}
+                  >
+                    Apply Filter
+                  </Button>
+                </Stack>
+              </Modal>
+            </>
+          )}
+        </Group>
+
+        {loading ? (
+          <Group justify="center" h={256}>
+            <Loader />
+          </Group>
+        ) : (
+          <Stack gap="lg">
+            {flattenedSections.map((section, index) => (
+              <Box key={index}>
+                {section.title && (
+                  <>
+                    <Title order={4}>{section.title}</Title>
+                    <Divider my="sm" />
+                  </>
+                )}
+                {/* Desktop Table View */}
+                <Table.ScrollContainer minWidth={820} visibleFrom="md">
+                  <Table>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>ID / Name</Table.Th>
+                        <Table.Th>Location</Table.Th>
+                        <Table.Th>Details</Table.Th>
+                        <Table.Th>Date</Table.Th>
+                        <Table.Th>Status</Table.Th>
+                        <Table.Th>Images</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
                       {section.data.map((item, idx) => (
-                        <EventsCard
-                          key={`mobile-${item.id}-${idx}`}
+                        <EventsTableRow
+                          key={`desktop-${item._id}-${idx}`}
                           item={item}
                           toggleEventImages={toggleEventImages}
                           setToggleEventImages={setToggleEventImages}
+                          setSelectedImage={setSelectedImage}
+                          onChanged={() => fetchSalesOrders(true)}
                         />
                       ))}
-                    </div>
-                  </div>
-                ))}
-                {flattenedSections.every(
-                  (section) => section.data.length === 0,
-                ) && (
-                  <div className="text-center py-12">
-                    <Calendar className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500 text-lg mb-2">
-                      {searchQuery
-                        ? 'No events found matching your search.'
-                        : 'No events found.'}
-                    </p>
-                    <p className="text-gray-400 text-sm mb-4">
-                      {!searchQuery &&
-                        'Create your first event to get started.'}
-                    </p>
-                    <Button onClick={() => navigate('/add-rm-event')}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Event
-                    </Button>
-                  </div>
-                )}
-              </div>
+                    </Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
+
+                {/* Mobile Card View */}
+                <Stack gap="md" hiddenFrom="md">
+                  {section.data.map((item, idx) => (
+                    <EventsCard
+                      key={`mobile-${item._id}-${idx}`}
+                      item={item}
+                      toggleEventImages={toggleEventImages}
+                      setToggleEventImages={setToggleEventImages}
+                      onChanged={() => fetchSalesOrders(true)}
+                    />
+                  ))}
+                </Stack>
+              </Box>
+            ))}
+            {flattenedSections.every(
+              (section) => section.data.length === 0,
+            ) && (
+              <EmptyState
+                icon={<Calendar size={32} />}
+                title={
+                  searchQuery
+                    ? 'No events found matching your search.'
+                    : 'No events found.'
+                }
+                description={
+                  !searchQuery && 'Create your first event to get started.'
+                }
+                action={
+                  <Button
+                    mt="sm"
+                    leftSection={<Plus size={16} />}
+                    onClick={() => navigate('/add-rm-event')}
+                  >
+                    Add Event
+                  </Button>
+                }
+              />
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </Stack>
+        )}
+      </Paper>
 
       {/* Shared Image Modal for Desktop Table */}
       {selectedImage && (
-        <Dialog
-          open={!!selectedImage}
-          onOpenChange={() => setSelectedImage(null)}
-        >
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-            <div className="relative">
-              <img
-                src={selectedImage}
-                alt="Event Image"
-                className="w-full h-auto max-h-[85vh] object-contain rounded-lg"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ImagePreviewModal
+          src={selectedImage}
+          onClose={() => setSelectedImage(null)}
+        />
       )}
-    </div>
+    </Container>
   );
 };
 

@@ -1,26 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { selectUser } from '@/redux/slices/AuthSlice';
-import { callApi, callServerAPI } from '@/api';
-import { toast } from 'sonner';
+import { callApi } from '@/api';
+import { errorMessage, newRequestId } from '@/api/v2';
 import dayjs from 'dayjs';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { ArrowLeft, CalendarIcon } from 'lucide-react';
+  Alert,
+  Button,
+  Container,
+  NumberInput,
+  Paper,
+  Stack,
+  Text,
+  TextInput,
+  Textarea,
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { CalendarIcon } from 'lucide-react';
+import { toast } from '@/lib/toast';
+import { PageHeader } from '@/components/app';
+
+const RESOURCE = '/v2/daily-activities';
 
 interface ExistingActivityDate {
   date: string; // formatted as YYYY-MM-DD (passed from previous screen)
-  id: string | number;
+  id: string | number; // the activity's _id
 }
 
 interface ActivityFormData {
@@ -35,26 +38,41 @@ interface ActivityFormData {
 
 const AddDailyActivity: React.FC = () => {
   const navigate = useNavigate();
-  const user = useSelector(selectUser);
   const [loading, setLoading] = useState(false);
 
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [prevMeterReading, setPrevMeterReading] = useState('');
   // Dates & ids of existing activities passed from previous screen
   const location = useLocation();
   // If user came via proper navigation we get dates in location.state; otherwise empty (direct URL access)
+  // A failed activity opened from the list to be fixed and sent again.
+  const record = location.state?.record;
+  // The activity being edited does not block its own date.
+  const withoutRecord = (list: ExistingActivityDate[]) =>
+    list.filter((activity) => activity.id !== record?._id);
   const initialPassedDates: ExistingActivityDate[] =
     (location.state as { dates?: ExistingActivityDate[] })?.dates || [];
-  const [existingActivities, setExistingActivities] =
-    useState<ExistingActivityDate[]>(initialPassedDates);
+  const [existingActivities, setExistingActivities] = useState<
+    ExistingActivityDate[]
+  >(withoutRecord(initialPassedDates));
+  // Field the server (or Odoo) blamed, and its message.
+  const [fieldError, setFieldError] = useState<{
+    field?: string;
+    message: string;
+  } | null>(
+    record?.syncError
+      ? { field: record.syncErrorField, message: record.syncError }
+      : null,
+  );
+  // One key per form, so a double submit cannot create two activities.
+  const requestId = useRef(newRequestId());
   const [existingDatesLoading, setExistingDatesLoading] = useState(false);
 
   const [formData, setFormData] = useState<ActivityFormData>({
-    date: new Date(),
-    area_visited: '',
-    description: '',
-    closing_meter: '',
-    km_traveled: '',
+    date: record ? dayjs(record.date).toDate() : new Date(),
+    area_visited: record?.area_visited ?? '',
+    description: record?.description ?? '',
+    closing_meter: record ? String(record.closing_meter ?? '') : '',
+    km_traveled: record ? String(record.km_traveled ?? '') : '',
     fuel_consumed: '',
     remarks: '',
   });
@@ -71,25 +89,24 @@ const AddDailyActivity: React.FC = () => {
 
   // Fallback: If user directly loads this page (no passed dates), fetch recent activities to block duplicates
   useEffect(() => {
-    if (initialPassedDates.length === 0 && user?.id) {
+    if (initialPassedDates.length === 0) {
       setExistingDatesLoading(true);
       callApi(
         'GET',
-        `/daily-activities/employee/${user.id}`,
+        `${RESOURCE}?limit=200`,
         null,
         (resp) => {
-          // Map to date list (assuming resp.data is an array with a 'date' field)
           interface RawActivity {
-            id: string | number;
+            _id: string;
             date: string | Date;
           }
           const mapped: ExistingActivityDate[] = Array.isArray(resp.data)
             ? resp.data.map((a: RawActivity) => ({
                 date: dayjs(a.date).format('YYYY-MM-DD'),
-                id: a.id,
+                id: a._id,
               }))
             : [];
-          setExistingActivities(mapped);
+          setExistingActivities(withoutRecord(mapped));
           setExistingDatesLoading(false);
         },
         () => {
@@ -97,38 +114,38 @@ const AddDailyActivity: React.FC = () => {
         },
       );
     }
-  }, [initialPassedDates.length, user?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPassedDates.length]);
 
-  // Fetch previous meter reading from backend ONLY (duplicate validation relies on passed or fetched state)
+  // Previous meter reading, read from Odoo by the backend.
   useEffect(() => {
-    if (!user?.id || !user?.company_id) return;
+    // No previous reading: start from zero. An activity being edited keeps
+    // the closing meter it was saved with.
+    const noReading = () => {
+      setPrevMeterReading('0');
+      if (record) return;
+      setFormData((prev) => ({
+        ...prev,
+        closing_meter: '0',
+        km_traveled: '0',
+      }));
+    };
 
-    callServerAPI(
-      'POST',
-      '/get/last/reading',
-      { data: { employee_id: user.id, company_id: user.company_id } },
-      (response: { data: string }) => {
+    callApi(
+      'GET',
+      '/v2/lookups/last-reading',
+      null,
+      (response) => {
         if (response.data) {
           setPrevMeterReading(response.data);
         } else {
-          setPrevMeterReading('0');
-          setFormData((prev) => ({
-            ...prev,
-            closing_meter: '0',
-            km_traveled: '0',
-          }));
+          noReading();
         }
       },
-      () => {
-        setPrevMeterReading('0');
-        setFormData((prev) => ({
-          ...prev,
-          closing_meter: '0',
-          km_traveled: '0',
-        }));
-      },
+      noReading,
     );
-  }, [user?.id, user?.company_id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-calculate KM traveled when closing meter changes
   useEffect(() => {
@@ -202,279 +219,203 @@ const AddDailyActivity: React.FC = () => {
     return true;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!validateForm()) return;
 
-    try {
-      setLoading(true);
+    const body = {
+      area_visited: formData.area_visited,
+      description: formData.description,
+      closing_meter: parseInt(formData.closing_meter) || 0,
+      km_traveled: parseInt(formData.km_traveled) || 0,
+      date: dayjs(formData.date).format('YYYY-MM-DD'),
+    };
 
-      const data = {
-        employee_id: user?.id || 200,
-        area_visited: formData.area_visited,
-        description: formData.description,
-        closing_meter: parseInt(formData.closing_meter) || 0,
-        km_traveled: parseInt(formData.km_traveled) || 0,
-        date: dayjs(formData.date).format('DD/MM/YYYY'),
-        company_id: user?.company_id || 1,
-      };
-
-      // Final pre-submit duplicate guard (race condition handling)
-      const selectedDateString = dayjs(formData.date).format('YYYY-MM-DD');
-      if (existingActivities.some((a) => a.date === selectedDateString)) {
-        toast.error('Daily activity already exists for this date');
-        setLoading(false);
-        return;
-      }
-
-      // First, save to server API (ODoo layer)
-      callServerAPI(
-        'POST',
-        '/post/daily/activities',
-        { data },
-        (response: { data: { id: string | number } }) => {
-          // Then save to local API with additional fields
-          const localData = {
-            ...data,
-            date: formData.date,
-            employee_id: user?.id || 200,
-            region_id: user?.region?.id || 1,
-            territory_ids:
-              user?.territories?.map((t: { id: string | number }) => t.id) ||
-              [],
-            id: response.data.id,
-
-            remarks: formData.remarks,
-          };
-
-          callApi(
-            'POST',
-            '/daily-activities',
-            localData,
-            () => {
-              toast.success('Daily activity added successfully!');
-              // Update local duplicate list so user cannot immediately add same date again if they stay
-              setExistingActivities((prev) => [
-                ...prev,
-                { date: selectedDateString, id: response.data.id },
-              ]);
-              navigate('/daily-activities');
-            },
-            (error) => {
-              console.error('Error saving to local API:', error);
-              toast.error('Failed to save activity locally', {
-                description: 'Please try again',
-              });
-              setLoading(false);
-            },
-          );
-        },
-        (error) => {
-          console.error('Error saving to server API:', error);
-          type ServerError = { message?: string } | undefined;
-          const serverErr = error as ServerError;
-          const msg = serverErr?.message?.toLowerCase().includes('duplicate')
-            ? 'Daily activity already exists for this date'
-            : 'Failed to save daily activity';
-          toast.error(msg, { description: 'Please try again' });
-          setLoading(false);
-        },
+    const onSuccess = () => {
+      toast.success(
+        record
+          ? 'Daily activity updated and queued'
+          : 'Daily activity saved and queued',
       );
-    } catch (error) {
-      console.error('Unexpected error:', error);
-      toast.error('Failed to save daily activity', {
-        description: 'Please try again',
-      });
+      navigate('/daily-activities');
+    };
+
+    const onError = (error) => {
       setLoading(false);
+      const message = errorMessage(error, 'Failed to save daily activity');
+      setFieldError({ field: error?.field, message });
+      toast.error(message, { description: 'Please try again' });
+    };
+
+    setLoading(true);
+    setFieldError(null);
+    if (record) {
+      callApi('PUT', `${RESOURCE}/${record._id}`, body, onSuccess, onError);
+    } else {
+      callApi(
+        'POST',
+        RESOURCE,
+        { ...body, clientRequestId: requestId.current },
+        onSuccess,
+        onError,
+      );
     }
   };
 
+  const FIELDS = ['date', 'area_visited', 'description', 'closing_meter'];
+  const errorFor = (field: string) =>
+    fieldError?.field === field ? fieldError.message : undefined;
+
+  const isDateDisabled = (date: Date) => {
+    // Disable future dates
+    if (date > new Date()) return true;
+
+    // Disable dates older than 5 days
+    if (date < new Date(new Date().setDate(new Date().getDate() - 5)))
+      return true;
+
+    // Disable today's date
+    if (date.getDate() === new Date().getDate()) return true;
+
+    // Disable dates that already have activities
+    const dateString = dayjs(date).format('YYYY-MM-DD');
+    const hasExistingActivity = existingActivities.some(
+      (activity) => activity.date === dateString,
+    );
+
+    return hasExistingActivity;
+  };
+
   return (
-    <div className="min-h-screen p-4">
-      <div className="container mx-auto max-w-2xl">
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate(-1)}
-              aria-label="Go back"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <CardTitle>Add Daily Activity</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Date */}
-            <div className="space-y-2">
-              <Label htmlFor="date">
-                Date <span className="text-red-500">*</span>
-              </Label>
-              <Popover open={showDatePicker} onOpenChange={setShowDatePicker}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dayjs(formData.date).format('DD/MM/YYYY')}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={formData.date}
-                    onSelect={(date) => {
-                      if (date) {
-                        handleInputChange('date', date);
-                        setShowDatePicker(false);
-                      }
-                    }}
-                    disabled={(date) => {
-                      // Disable future dates
-                      if (date > new Date()) return true;
-
-                      // Disable dates older than 5 days
-                      if (
-                        date <
-                        new Date(new Date().setDate(new Date().getDate() - 5))
-                      )
-                        return true;
-
-                      // Disable today's date
-                      if (date.getDate() === new Date().getDate()) return true;
-
-                      // Disable dates that already have activities
-                      const dateString = dayjs(date).format('YYYY-MM-DD');
-                      const hasExistingActivity = existingActivities.some(
-                        (activity) => activity.date === dateString,
-                      );
-
-                      return hasExistingActivity;
-                    }}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-              {existingDatesLoading && (
-                <p className="text-xs text-black ml-2">
-                  Loading existing dates…
-                </p>
-              )}
-              <p className="text-xs text-gray-500">
+    <Container size="sm" px={0}>
+      <PageHeader
+        title={record ? 'Edit Daily Activity' : 'Add Daily Activity'}
+        back
+      />
+      <Paper withBorder shadow="sm" p="lg">
+        <Stack gap="md">
+          {fieldError && !FIELDS.includes(fieldError.field) && (
+            <Alert color="red" variant="light">
+              {fieldError.message}
+            </Alert>
+          )}
+          {/* Date */}
+          <DatePickerInput
+            label="Date"
+            withAsterisk
+            valueFormat="DD/MM/YYYY"
+            leftSection={<CalendarIcon size={16} />}
+            value={formData.date}
+            onChange={(value) => {
+              if (value) {
+                handleInputChange('date', dayjs(value).toDate());
+              }
+            }}
+            excludeDate={(date) => isDateDisabled(dayjs(date).toDate())}
+            inputWrapperOrder={['label', 'input', 'description', 'error']}
+            error={errorFor('date')}
+            description={
+              <>
+                {existingDatesLoading && (
+                  <Text span size="xs" c="var(--mantine-color-text)" display="block">
+                    Loading existing dates…
+                  </Text>
+                )}
                 Note: You can only create one activity per date. Dates with
                 existing activities are disabled.
-              </p>
-            </div>
+              </>
+            }
+          />
 
-            {/* Area Visited */}
-            <div className="space-y-2">
-              <Label htmlFor="area_visited">
-                Area Visited <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="area_visited"
-                placeholder="Enter area visited"
-                value={formData.area_visited}
-                onChange={(e) =>
-                  handleInputChange('area_visited', e.target.value)
-                }
-              />
-            </div>
+          {/* Area Visited */}
+          <TextInput
+            label="Area Visited"
+            withAsterisk
+            placeholder="Enter area visited"
+            value={formData.area_visited}
+            onChange={(e) =>
+              handleInputChange('area_visited', e.currentTarget.value)
+            }
+            error={errorFor('area_visited')}
+          />
 
-            {/* Description */}
-            <div className="space-y-2">
-              <Label htmlFor="description">
-                Description <span className="text-red-500">*</span>
-              </Label>
-              <Textarea
-                id="description"
-                placeholder="Enter description"
-                value={formData.description}
-                onChange={(e) =>
-                  handleInputChange('description', e.target.value)
-                }
-                rows={3}
-              />
-            </div>
+          {/* Description */}
+          <Textarea
+            label="Description"
+            withAsterisk
+            placeholder="Enter description"
+            value={formData.description}
+            onChange={(e) =>
+              handleInputChange('description', e.currentTarget.value)
+            }
+            error={errorFor('description')}
+            rows={3}
+          />
 
-            {/* Previous Meter Reading */}
-            <div className="space-y-2">
-              <Label htmlFor="prev_meter_reading">Previous Meter Reading</Label>
-              <Input
-                id="prev_meter_reading"
-                type="number"
-                placeholder="Previous meter reading"
-                value={prevMeterReading}
-                readOnly
-                className=""
-              />
-            </div>
+          {/* Previous Meter Reading */}
+          <NumberInput
+            label="Previous Meter Reading"
+            placeholder="Previous meter reading"
+            value={prevMeterReading}
+            hideControls
+            readOnly
+          />
 
-            {/* Current Meter Reading */}
-            <div className="space-y-2">
-              <Label htmlFor="closing_meter">
-                Current Meter Reading <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="closing_meter"
-                type="number"
-                placeholder="Enter current meter reading"
-                value={formData.closing_meter}
-                onChange={(e) =>
-                  handleInputChange('closing_meter', e.target.value)
-                }
-              />
-            </div>
+          {/* Current Meter Reading */}
+          <NumberInput
+            label="Current Meter Reading"
+            withAsterisk
+            placeholder="Enter current meter reading"
+            value={formData.closing_meter}
+            onChange={(value) =>
+              handleInputChange('closing_meter', String(value))
+            }
+            hideControls
+            error={errorFor('closing_meter')}
+          />
 
-            {/* KM Traveled (Auto-calculated) */}
-            <div className="space-y-2">
-              <Label htmlFor="km_traveled">KM Traveled</Label>
-              <Input
-                id="km_traveled"
-                type="number"
-                placeholder="Calculated automatically"
-                value={formData.km_traveled}
-                readOnly
-                className=""
-              />
-            </div>
+          {/* KM Traveled (Auto-calculated) */}
+          <NumberInput
+            label="KM Traveled"
+            placeholder="Calculated automatically"
+            value={formData.km_traveled}
+            hideControls
+            readOnly
+          />
 
-            {/* Remarks */}
-            <div className="space-y-2">
-              <Label htmlFor="remarks">Remarks</Label>
-              <Textarea
-                id="remarks"
-                placeholder="Additional remarks"
-                value={formData.remarks}
-                onChange={(e) => handleInputChange('remarks', e.target.value)}
-                rows={3}
-              />
-            </div>
+          {/* Remarks */}
+          <Textarea
+            label="Remarks"
+            placeholder="Additional remarks"
+            value={formData.remarks}
+            onChange={(e) => handleInputChange('remarks', e.currentTarget.value)}
+            rows={3}
+          />
 
-            {/* Check if activity already exists for selected date */}
-            {existingActivities.some(
-              (activity) =>
-                activity.date === dayjs(formData.date).format('YYYY-MM-DD'),
-            ) ? (
-              <div className="w-full p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800 font-medium">
-                  Daily activity already exists for this date. Please select a
-                  different date.
-                </p>
-              </div>
-            ) : (
-              <Button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="w-full"
-              >
-                {loading ? 'Adding...' : 'Add Daily Activity'}
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+          {/* Check if activity already exists for selected date */}
+          {existingActivities.some(
+            (activity) =>
+              activity.date === dayjs(formData.date).format('YYYY-MM-DD'),
+          ) ? (
+            <Alert color="yellow" variant="light">
+              <Text size="sm" fw={500}>
+                Daily activity already exists for this date. Please select a
+                different date.
+              </Text>
+            </Alert>
+          ) : (
+            <Button onClick={handleSubmit} disabled={loading} fullWidth>
+              {loading
+                ? record
+                  ? 'Saving...'
+                  : 'Adding...'
+                : record
+                  ? 'Save & Resend'
+                  : 'Add Daily Activity'}
+            </Button>
+          )}
+        </Stack>
+      </Paper>
+    </Container>
   );
 };
 
