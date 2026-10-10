@@ -23,6 +23,9 @@ export const buildTheme = (primaryHex?: string) => {
     colors: brand ? { brand } : {},
     defaultRadius: 'md',
     components: {
+      // Loading buttons show three dots in place of a spinner.
+      Button: { defaultProps: { loaderProps: { type: 'dots' } } },
+      ActionIcon: { defaultProps: { loaderProps: { type: 'dots' } } },
       Paper: { defaultProps: { radius: 'lg' } },
       Card: { defaultProps: { radius: 'lg' } },
       Modal: { defaultProps: { centered: true, radius: 'lg' } },

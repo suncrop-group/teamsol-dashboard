@@ -20,13 +20,18 @@ import {
 } from '@mantine/core';
 import dayjs from 'dayjs';
 import { callApi } from '@/api';
-import { Bell, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { Bell, ExternalLink, CheckCircle2, Wrench } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { selectUser } from '@/redux/slices/AuthSlice';
+import { hasTarget, openNotificationTarget } from '@/api/notificationTarget';
 import { toast } from '@/lib/toast';
 import { EmptyState } from '@/components/app';
 
 const Notifications = () => {
   const notifications = useSelector(selectNotifications);
+  const user = useSelector(selectUser);
   const dispatch = useDispatch();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const onSuccess = (response) => {
@@ -121,7 +126,11 @@ const Notifications = () => {
               shadow={item.read ? 'xs' : 'sm'}
               p={{ base: 'md', sm: 'lg' }}
               bg={item.read ? undefined : 'var(--mantine-color-blue-light)'}
-              onClick={() => handleReadNotification(item.id)}
+              onClick={() => {
+                handleReadNotification(item.id);
+                // A failed-job notification opens the record it is about.
+                if (hasTarget(item)) openNotificationTarget(item, navigate, user);
+              }}
               style={{
                 cursor: 'pointer',
                 borderLeft: `4px solid var(--mantine-color-${
@@ -174,6 +183,23 @@ const Notifications = () => {
                   <Text size="sm" lh={1.6} c={item.read ? 'dimmed' : undefined}>
                     {item.body}
                   </Text>
+
+                  {hasTarget(item) && (
+                    <Button
+                      mt="md"
+                      size="xs"
+                      variant={item.read ? 'default' : 'filled'}
+                      color={item.read ? undefined : 'red'}
+                      leftSection={<Wrench size={14} />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReadNotification(item.id);
+                        openNotificationTarget(item, navigate, user);
+                      }}
+                    >
+                      Open & fix
+                    </Button>
+                  )}
 
                   {item?.url && (
                     <Button
