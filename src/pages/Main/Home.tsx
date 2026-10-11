@@ -159,11 +159,11 @@ const TargetWidgetV4 = ({
     value: string,
     valueColor?: string,
   ) => (
-    <Box p="lg" style={raised(SHADOW_MD, 28)}>
-      <Group gap="sm">
+    <Box p={{ base: 'sm', sm: 'lg' }} style={raised(SHADOW_MD, 28)}>
+      <Group gap="sm" wrap="nowrap">
         <Center
-          w={44}
-          h={44}
+          w={{ base: 32, sm: 44 }}
+          h={{ base: 32, sm: 44 }}
           c={valueColor || 'dimmed'}
           style={raised(SHADOW_SM, 22)}
         >
@@ -173,7 +173,7 @@ const TargetWidgetV4 = ({
           {label}
         </Text>
       </Group>
-      <Text fz={26} fw={800} mt="md" c={valueColor}>
+      <Text fz={{ base: 18, sm: 26 }} fw={800} mt={{ base: 'xs', sm: 'md' }} c={valueColor}>
         {value}
       </Text>
     </Box>
@@ -185,17 +185,19 @@ const TargetWidgetV4 = ({
         direction={{ base: 'column', lg: 'row' }}
         align="center"
         justify="space-between"
-        gap={40}
+        gap={{ base: 16, lg: 40 }}
       >
         <Stack gap="lg" flex={1} w="100%">
-          <Group justify="space-between" align="center" gap="md">
-            <Title order={2} fz={{ base: 24, sm: 30 }} fw={800} lts={-0.5}>
+          <Group justify="space-between" align="center" gap="md" wrap="nowrap">
+            <Title order={2} fz={{ base: 20, sm: 30 }} fw={800} lts={-0.5} flex={1}>
               Target vs Achievement
             </Title>
 
             <SegmentedControl
               radius="xl"
               size="sm"
+              // Keeps its full width beside a title that wraps on a phone.
+              style={{ flexShrink: 0 }}
               value={view}
               onChange={(value) => setView(value as 'monthly' | 'yearly')}
               data={[
@@ -208,13 +210,13 @@ const TargetWidgetV4 = ({
                   textTransform: 'uppercase',
                   letterSpacing: 1.5,
                   fontSize: 11,
-                  padding: '8px 22px',
+                  padding: '8px clamp(10px, 3vw, 22px)',
                 },
               }}
             />
           </Group>
 
-          <Text c="dimmed" fw={500} fz="md">
+          <Text c="dimmed" fw={500} fz={{ base: 'sm', sm: 'md' }}>
             Your {user?.is_territory_manager ? 'territory' : 'region'}{' '}
             {user?.is_territory_manager
               ? `${
@@ -231,7 +233,8 @@ const TargetWidgetV4 = ({
             of its {view} goal.
           </Text>
 
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg" mt="xs">
+          {/* Beside the gauge on a wide screen; under it on a phone (below). */}
+          <SimpleGrid cols={2} spacing="lg" mt="xs" visibleFrom="lg">
             {stat(<Target size={20} />, 'Target', fmt(target))}
             {stat(<Award size={20} />, 'Achieved', fmt(achievement), color)}
           </SimpleGrid>
@@ -240,7 +243,7 @@ const TargetWidgetV4 = ({
         {/* The gauge sits in a recessed panel */}
         <Center
           w={{ base: '100%', lg: 340 }}
-          h={260}
+          h={{ base: 200, lg: 260 }}
           style={{
             flexShrink: 0,
             borderRadius: 36,
@@ -251,6 +254,13 @@ const TargetWidgetV4 = ({
         >
           <ArcGauge pct={pct} />
         </Center>
+
+        {/* Phone and tablet: the two figures side by side under the gauge,
+            as in the mobile app. */}
+        <SimpleGrid cols={2} spacing="sm" w="100%" hiddenFrom="lg">
+          {stat(<Target size={18} />, 'Target', fmt(target))}
+          {stat(<Award size={18} />, 'Achieved', fmt(achievement), color)}
+        </SimpleGrid>
       </Flex>
     </Box>
   );
@@ -406,7 +416,8 @@ const Home = () => {
 
   return (
     <Container size="xl" px={0} py="md">
-      <Stack gap={48}>
+      {/* Tighter on a phone, where it is laid out like the mobile app's home. */}
+      <Stack gap="clamp(20px, 5vw, 48px)">
         {/* Header */}
         <Group justify="space-between" align="center" gap="md">
           <Title order={1} fz={{ base: 28, sm: 38 }} fw={800} lts={-1}>
@@ -415,7 +426,13 @@ const Home = () => {
               {user?.name?.split(' ')[0] || 'User'}
             </Text>
           </Title>
-          <Group gap="xs" px="lg" py={10} style={raised(SHADOW_SM, 999)}>
+          <Group
+            gap="xs"
+            px="lg"
+            py={10}
+            style={raised(SHADOW_SM, 999)}
+            visibleFrom="sm"
+          >
             <Box
               w={10}
               h={10}
@@ -481,8 +498,12 @@ const Home = () => {
                     h="100%"
                     style={raised(SHADOW_MD, 32)}
                   >
-                    <Stack align="center" gap="lg">
-                      <Center w={84} h={84} style={raised(SHADOW_SM, 26)}>
+                    <Stack align="center" gap="clamp(10px, 2.5vw, 20px)">
+                      <Center
+                        w={{ base: 64, sm: 84 }}
+                        h={{ base: 64, sm: 84 }}
+                        style={raised(SHADOW_SM, 26)}
+                      >
                         <Image
                           src={item.icon}
                           alt={item.title}

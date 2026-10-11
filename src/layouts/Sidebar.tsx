@@ -21,12 +21,17 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
+  ArrowLeft,
   BadgeCheck,
   Bell,
   ChevronsUpDown,
+  Download,
+  FileText,
+  Home as HomeIcon,
   LogOut,
   Moon,
   Sun,
+  UserRound,
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -39,6 +44,9 @@ import {
   selectNotificationCount,
 } from '@/redux/slices/AppStateSlice';
 import type { AppDispatch } from '@/redux/store';
+import { useInstallPrompt } from '@/hooks/useInstallPrompt';
+import { toast } from '@/lib/toast';
+import { usePageTitle } from './pageTitle';
 
 const initials = (name?: string) =>
   (name || 'U')
@@ -82,12 +90,47 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     [modules],
   );
 
+  // Top-level screens: Home, each module, Reports, and the two reached from
+  // the bottom tabs. Every other screen was opened from one of them, so it
+  // gets a back arrow in the header, like a screen in a phone app.
+  const isRoot =
+    pathname === '/' ||
+    pathname === '/notifications' ||
+    pathname === '/profile' ||
+    links.some((link) => link.path === pathname);
+
   const activeTitle =
     links.find(
       (link) => pathname === link.path || pathname.startsWith(`${link.path}/`),
     )?.title ||
-    user?.company?.name ||
+    (pathname === '/'
+      ? user?.company?.name
+      : // "/add-fuel" → "Add Fuel", "/event-details/12" → "Event Details"
+        pathname
+          .split('/')[1]
+          ?.replace(/-/g, ' ')
+          .replace(/\b\w/g, (letter) => letter.toUpperCase())) ||
     'Dashboard';
+
+  // Back to where the user came from; a screen opened directly (a shared
+  // link, an installed app's first screen) has nowhere to go back to.
+  const goBack = () => {
+    if (window.history.state?.idx > 0) navigate(-1);
+    else navigate('/');
+  };
+
+  // What the page itself calls this screen, when it says ("Edit Toll").
+  const pageTitle = usePageTitle();
+
+  const { canInstall, iosHint, install } = useInstallPrompt();
+
+  // Bottom tabs on a phone: the same three as the mobile app. The menu of
+  // modules opens from the top bar, and the bell sits there too.
+  const tabs = [
+    { label: 'Home', icon: HomeIcon, path: '/' },
+    { label: 'Reports', icon: FileText, path: '/reports' },
+    { label: 'Account', icon: UserRound, path: '/profile' },
+  ];
 
   return (
     <AppShell
@@ -95,6 +138,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       // sits to its right, above the content.
       layout="alt"
       header={{ height: 60 }}
+      // Phones only (see AppShell.Footer below). The extra height keeps the
+      // tabs clear of the home indicator when installed as an app.
+      footer={{
+        height: { base: 'calc(60px + env(safe-area-inset-bottom))', sm: 0 },
+      }}
       navbar={{
         width: 264,
         breakpoint: 'sm',
@@ -104,13 +152,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     >
       <AppShell.Header>
         <Group h="100%" px="md" gap="sm">
-          <Burger
-            opened={mobileOpened}
-            onClick={toggleMobile}
-            hiddenFrom="sm"
-            size="sm"
-            aria-label="Toggle navigation"
-          />
+          {/* On a phone the top-left corner is the menu on a top-level
+              screen and the back arrow on a nested one. */}
+          {isRoot && (
+            <Burger
+              opened={mobileOpened}
+              onClick={toggleMobile}
+              hiddenFrom="sm"
+              size="sm"
+              aria-label="Open menu"
+            />
+          )}
           <Burger
             opened={false}
             onClick={toggleDesktop}
@@ -118,8 +170,33 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             size="sm"
             aria-label="Toggle navigation"
           />
-          <Text fw={500} size="sm" c="dimmed" truncate flex={1}>
+          {/* Phones only: wider screens have the page's own back arrow. */}
+          {!isRoot && (
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg"
+              aria-label="Go back"
+              hiddenFrom="sm"
+              onClick={goBack}
+            >
+              <ArrowLeft size={20} />
+            </ActionIcon>
+          )}
+          {/* Wider screens: the section name, as before. */}
+          <Text fw={500} size="sm" c="dimmed" truncate flex={1} visibleFrom="sm">
             {activeTitle}
+          </Text>
+          {/* Phones: a nested screen's own title beside the back arrow. */}
+          <Text
+            fw={isRoot ? 500 : 600}
+            size={isRoot ? 'sm' : 'md'}
+            c={isRoot ? 'dimmed' : undefined}
+            truncate
+            flex={1}
+            hiddenFrom="sm"
+          >
+            {isRoot ? activeTitle : pageTitle || activeTitle}
           </Text>
 
           <Tooltip label={isDark ? 'Light mode' : 'Dark mode'}>
@@ -257,6 +334,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               >
                 Notifications
               </Menu.Item>
+              {(canInstall || iosHint) && (
+                <Menu.Item
+                  leftSection={<Download size={16} />}
+                  onClick={() => {
+                    if (canInstall) install();
+                    else
+                      toast.info(
+                        'In Safari, tap Share, then "Add to Home Screen".',
+                      );
+                  }}
+                >
+                  Install app
+                </Menu.Item>
+              )}
               <Menu.Divider />
               <Menu.Item
                 color="red"
@@ -273,6 +364,46 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <AppShell.Main bg="light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))">
         {children}
       </AppShell.Main>
+
+      {/* Phone navigation: the same three tabs as the mobile app. */}
+      <AppShell.Footer hiddenFrom="sm" pb="env(safe-area-inset-bottom)">
+        <Group h={60} gap={0} grow wrap="nowrap">
+          {tabs.map((tab) => {
+            const active =
+              tab.path === '/' ? pathname === '/' : pathname.startsWith(tab.path);
+            return (
+              <UnstyledButton
+                key={tab.path}
+                h="100%"
+                aria-label={tab.label}
+                aria-current={active ? 'page' : undefined}
+                onClick={() => {
+                  closeMobile();
+                  navigate(tab.path);
+                }}
+              >
+                <Stack align="center" gap={2}>
+                  <tab.icon
+                    size={22}
+                    color={
+                      active
+                        ? 'var(--mantine-primary-color-filled)'
+                        : 'var(--mantine-color-dimmed)'
+                    }
+                  />
+                  <Text
+                    size="xs"
+                    fw={active ? 600 : 500}
+                    c={active ? 'var(--mantine-primary-color-filled)' : 'dimmed'}
+                  >
+                    {tab.label}
+                  </Text>
+                </Stack>
+              </UnstyledButton>
+            );
+          })}
+        </Group>
+      </AppShell.Footer>
     </AppShell>
   );
 }
