@@ -15,7 +15,7 @@ import {
   TextInput,
 } from '@mantine/core';
 import { toast } from '@/lib/toast';
-import fallbackLogo from '@/assets/images/logo.png'; // Place a default logo image here
+import fallbackLogo from '@/assets/images/suncrop.png'; // Place a default logo image here
 
 const ProfileSettings = () => {
   const user = useSelector(selectUser);

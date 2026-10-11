@@ -14,6 +14,9 @@ export interface ProjectState {
   };
 
   projectId: string;
+
+  /** The project's own name, e.g. the company the dashboard belongs to. */
+  name?: string;
 }
 
 const projectSlice = createSlice({
@@ -44,6 +47,10 @@ const projectSlice = createSlice({
     setLogo: (state, action) => {
       state.logo = action.payload;
     },
+
+    setProjectName: (state, action) => {
+      state.name = action.payload;
+    },
   },
 });
 
@@ -51,10 +58,12 @@ export const {
   setColorScheme,
   setProjectId,
   setLogo,
+  setProjectName,
   setProjectDetails,
 } = projectSlice.actions;
 
 export const selectLogo = (state: RootState) => state.project.logo;
+export const selectProjectName = (state: RootState) => state.project.name;
 export const selectColorScheme = (state: RootState) =>
   state.project.color_scheme;
 export const selectProjectId = (state: RootState) => state.project.projectId;

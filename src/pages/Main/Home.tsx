@@ -9,6 +9,7 @@ import {
   setColorScheme,
   setLogo,
   setProjectDetails,
+  setProjectName,
 } from '@/redux/slices/ProjectSlice';
 import {
   setAppState,
@@ -367,6 +368,7 @@ const Home = () => {
         }),
       );
       dispatch(setLogo(r.data.project.logo));
+      dispatch(setProjectName(r.data.project.name));
       dispatch(setAuthenticated(true));
     };
     const onError = () => {

@@ -30,9 +30,17 @@ const defaultHeaders: {
   Accept: string;
   'Content-Type': string;
   Authorization?: string;
+  'X-Client': string;
+  'X-Client-Platform': string;
+  'X-Client-Version': string;
 } = {
   Accept: 'application/json',
   'Content-Type': 'application/json',
+  // Tells the backend this request comes from the web dashboard (and which
+  // build), so the admin panel can show who uses the web and who the app.
+  'X-Client': 'web',
+  'X-Client-Platform': 'web',
+  'X-Client-Version': __APP_VERSION__,
 };
 
 export const callApi = async (

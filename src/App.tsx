@@ -1,3 +1,4 @@
+import { useBranding } from '@/hooks/useBranding';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectIsAuthenticated, selectUser } from './redux/slices/AuthSlice';
@@ -147,6 +148,7 @@ const RenderEvents = (user: any) => {
 };
 
 function App() {
+  useBranding();
   const isUnderMaintenance = useSelector(selectIsUnderMaintenance);
   const maintenanceMessage = useSelector(selectMaintenanceMessage);
   const maintenanceUntil = useSelector(selectMaintenanceUntil);

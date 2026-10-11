@@ -1,1 +1,2 @@
-export {default as Logo} from './logo.png';
+// Shown wherever a project has no logo of its own.
+export {default as Logo} from './suncrop.png';
