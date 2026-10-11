@@ -1,3 +1,4 @@
+import { isEntryDateDisabled } from '@/utils/dates';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { callApi } from '@/api';
@@ -266,15 +267,8 @@ const AddDailyActivity: React.FC = () => {
     fieldError?.field === field ? fieldError.message : undefined;
 
   const isDateDisabled = (date: Date) => {
-    // Disable future dates
-    if (date > new Date()) return true;
-
-    // Disable dates older than 5 days
-    if (date < new Date(new Date().setDate(new Date().getDate() - 5)))
-      return true;
-
-    // Disable today's date
-    if (date.getDate() === new Date().getDate()) return true;
+    // Only today and the four days before, in Pakistan time.
+    if (isEntryDateDisabled(date)) return true;
 
     // Disable dates that already have activities
     const dateString = dayjs(date).format('YYYY-MM-DD');

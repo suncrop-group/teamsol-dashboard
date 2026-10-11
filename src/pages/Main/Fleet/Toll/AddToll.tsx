@@ -1,3 +1,4 @@
+import { entryDateLimits } from '@/utils/dates';
 import { useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -83,8 +84,6 @@ const AddToll = () => {
     }
   };
 
-  // Only the four days before today can be picked; today itself cannot.
-  const today = dayjs().startOf('day');
   const errorFor = (field: string) =>
     fieldError?.field === field ? fieldError.message : undefined;
 
@@ -107,9 +106,7 @@ const AddToll = () => {
             onChange={(value) =>
               setSelectedDate(value ? dayjs(value).toDate() : null)
             }
-            minDate={today.subtract(4, 'day').toDate()}
-            maxDate={today.toDate()}
-            excludeDate={(date) => dayjs(date).date() === today.date()}
+            {...entryDateLimits()}
             disabled={loading}
             error={errorFor('date')}
             withAsterisk

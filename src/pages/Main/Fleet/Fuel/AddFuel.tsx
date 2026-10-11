@@ -1,3 +1,4 @@
+import { isEntryDateDisabled } from '@/utils/dates';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -39,14 +40,8 @@ const FORM_FIELDS = [
 
 // Same rule the calendar had before: no future dates, nothing older than
 // five days, and not today's day of the month.
-const isDateDisabled = (value: string) => {
-  const date = dayjs(value).toDate();
-  return (
-    date > new Date() ||
-    date < new Date(new Date().setDate(new Date().getDate() - 5)) ||
-    date.getDate() === new Date().getDate()
-  );
-};
+// Today and the four days before, in Pakistan time (see utils/dates).
+const isDateDisabled = isEntryDateDisabled;
 
 const AddFuel = () => {
   const navigate = useNavigate();

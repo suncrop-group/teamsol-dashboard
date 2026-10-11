@@ -186,10 +186,8 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
 
       const uploadImage = await uploadToCloudinary(
         file,
-        `Expense-Report_${user.name}-${month}-${selectedYear}`.replace(
-          / /g,
-          '_',
-        ),
+        // Expense Reports / <employee> / <month-year>
+        `Expense Reports/${user.name || 'Unknown'}/${month}-${selectedYear}`,
         file.name,
       );
 
