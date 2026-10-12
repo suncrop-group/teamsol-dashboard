@@ -529,7 +529,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <Group h={60} gap={0} grow wrap="nowrap">
           {tabs.map((tab) => {
             const active =
-              tab.path === '/' ? pathname === '/' : pathname.startsWith(tab.path);
+              tab.path === '/'
+                ? pathname === '/'
+                : tab.path === '/reports'
+                  ? // The report screens sit under their own addresses.
+                    /^\/(reports|generate-report|[a-z-]+-reports)(\/|$)/.test(pathname)
+                  : pathname.startsWith(tab.path);
             return (
               <UnstyledButton
                 key={tab.path}

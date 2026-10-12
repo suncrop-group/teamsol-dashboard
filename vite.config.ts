@@ -40,6 +40,9 @@ export default defineConfig({
         skipWaiting: true,
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
+        // The PDF renderer's worker is large and only needed when a report
+        // is viewed on a phone, which needs a connection anyway.
+        globIgnores: ['**/pdf.worker*'],
         // The main script is about 1 MB.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // Any route of the single-page app is served the app shell.
@@ -53,6 +56,18 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // The PDF worker ships as `.mjs`, which the web host may not serve
+        // as JavaScript; a worker is refused unless it is.
+        assetFileNames: (asset) =>
+          asset.names?.some((name) => name.endsWith('.mjs'))
+            ? 'assets/[name]-[hash].js'
+            : 'assets/[name]-[hash][extname]',
+      },
     },
   },
   server: {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -16,13 +16,14 @@ import {
   TextInput,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
+import { useMediaQuery } from '@mantine/hooks';
 import { selectUser } from '@/redux/slices/AuthSlice';
 import { accountTiles, collectionTiles, saleReports } from '@/data';
 import { callApi } from '@/api';
 import { errorMessage } from '@/api/v2';
 import { toast } from '@/lib/toast';
 import { PageHeader } from '@/components/app';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, FileText } from 'lucide-react';
 import dayjs from 'dayjs';
 import { saveAs } from 'file-saver';
 
@@ -89,6 +90,9 @@ const OptionSwitch = ({ label, checked, onChange }) => (
 
 const allReports = [...accountTiles, ...collectionTiles, ...saleReports];
 
+// Only phones use it, and it brings the PDF renderer with it.
+const ReportViewer = lazy(() => import('./ReportViewer'));
+
 const GenerateReport = () => {
   const { state } = useLocation();
   // The browser keeps the navigation state across reloads, so the form is
@@ -101,6 +105,11 @@ const GenerateReport = () => {
   const [customers, setCustomers] = useState([]);
   const [report, setReport] = useState('');
   const [fileName, setFileName] = useState('');
+  // Below the `sm` width the report opens in the app-style viewer.
+  const phone = useMediaQuery('(max-width: 47.99em)', false, {
+    getInitialValueInEffect: false,
+  });
+  const [viewing, setViewing] = useState(false);
   const [policy, setPolicy] = useState([]);
   const [sortColumn, setSortColumn] = useState('');
   const [productsData, setProductsData] = useState([]);
@@ -433,6 +442,8 @@ const GenerateReport = () => {
         'DD_MM_YYYY',
       )}-${dayjs().format('HH_mm_ss')}.pdf`;
       setFileName(name || 'report.pdf');
+      // Straight into the viewer; closing it leaves the report's card.
+      setViewing(true);
       toast.success('PDF Generated', {
         description: 'PDF generated successfully!',
       });
@@ -524,6 +535,47 @@ const GenerateReport = () => {
     callApi('POST', '/v2/reports/generate', { code, data }, onSuccess, onError);
   };
 
+  const reportBlob = () => {
+    const base64WithoutPrefix = report.replace(
+      'data:application/pdf;base64,',
+      '',
+    );
+    const byteCharacters = atob(base64WithoutPrefix);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    return new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+  };
+
+  // The phone's own share sheet, where the browser can share a file.
+  const canShare = (() => {
+    try {
+      return (
+        typeof navigator.canShare === 'function' &&
+        navigator.canShare({
+          files: [new File([''], 'report.pdf', { type: 'application/pdf' })],
+        })
+      );
+    } catch {
+      return false;
+    }
+  })();
+
+  const shareReport = async () => {
+    try {
+      await navigator.share({
+        files: [new File([reportBlob()], fileName, { type: 'application/pdf' })],
+        title: title,
+      });
+    } catch (error) {
+      // Closing the share sheet is not a failure.
+      if (error?.name !== 'AbortError') {
+        toast.error('Could not share the report', { description: 'Error' });
+      }
+    }
+  };
+
   const downloadReport = () => {
     if (!report) {
       toast.error('No PDF found to download', { description: 'Error' });
@@ -531,18 +583,7 @@ const GenerateReport = () => {
     }
 
     try {
-      const base64WithoutPrefix = report.replace(
-        'data:application/pdf;base64,',
-        '',
-      );
-      const byteCharacters = atob(base64WithoutPrefix);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      saveAs(blob, fileName);
+      saveAs(reportBlob(), fileName);
       toast.success('Download Complete', {
         description: 'PDF saved to Downloads folder',
       });
@@ -580,9 +621,55 @@ const GenerateReport = () => {
     setReport('');
     setFileName('');
     setLoading(false);
+    setViewing(false);
   };
 
   /* ─── REPORT VIEWER ─────────────────────────────────────────────────── */
+  if (report && phone) {
+    return (
+      <Container size="lg" px={0}>
+        <PageHeader title={title} back={resetReport} />
+        <Paper withBorder shadow="sm" p="lg">
+          <Stack align="center" gap="xs">
+            <FileText size={44} color="var(--mantine-color-dimmed)" />
+            <Text fw={600} ta="center" style={{ wordBreak: 'break-word' }}>
+              {fileName}
+            </Text>
+            <Text size="sm" c="dimmed" ta="center">
+              The report is ready.
+            </Text>
+            <Stack gap="xs" w="100%" pt="xs">
+              <Button onClick={() => setViewing(true)}>View Report</Button>
+              {canShare && (
+                <Button variant="default" onClick={shareReport}>
+                  Share
+                </Button>
+              )}
+              <Button variant="default" onClick={downloadReport}>
+                Download
+              </Button>
+              <Button variant="subtle" onClick={resetReport}>
+                Generate new report
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+        <Suspense fallback={null}>
+          {viewing && (
+            <ReportViewer
+              opened
+              report={report}
+              name={fileName}
+              onClose={() => setViewing(false)}
+              onDownload={downloadReport}
+              onShare={canShare ? shareReport : undefined}
+            />
+          )}
+        </Suspense>
+      </Container>
+    );
+  }
+
   if (report) {
     return (
       <Stack
@@ -1073,15 +1160,23 @@ const GenerateReport = () => {
           </Paper>
         )}
 
-        {/* ── Generate button ── */}
-        <Button
-          onClick={handleGenerateReport}
-          loading={loading}
-          fullWidth
-          size="md"
+        {/* ── Generate button ── On a phone it stays in view above the
+            bottom tabs, like the app's footer button. */}
+        <Box
+          pos={{ base: 'sticky', sm: 'static' }}
+          bottom="calc(var(--app-shell-footer-offset, 0px) + var(--app-shell-padding, 0px))"
+          style={{ zIndex: 5 }}
         >
-          Generate Report
-        </Button>
+          <Button
+            onClick={handleGenerateReport}
+            loading={loading}
+            fullWidth
+            size="md"
+            style={{ boxShadow: 'var(--mantine-shadow-md)' }}
+          >
+            Generate Report
+          </Button>
+        </Box>
       </Stack>
     </Container>
   );

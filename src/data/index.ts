@@ -461,13 +461,6 @@ export const saleReports: AccountTiles = [
   },
 ];
 
-export const reportSectionTiles = [
-  { title: 'Accounting Reports', icon: Sales, path: '/accounting-reports' },
-  { title: 'Collection Reports', icon: Sales, path: '/collection-reports' },
-  { title: 'Expense Reports', icon: Sales, path: '/expense-reports' },
-  { title: 'Sale Reports', icon: Sales, path: '/sale-reports' },
-];
-
 export const fleetTiles: FleetTiles = [
   { title: 'Fuel', icon: Fuel, path: 'fuel' },
   { title: 'Maintenance', icon: Maintenance, path: 'maintenance' },
