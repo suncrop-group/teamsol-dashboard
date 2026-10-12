@@ -85,3 +85,17 @@ body {
     );
   }
 }
+
+/* iPhones and iPads zoom the whole page in when a field with text smaller
+   than 16px is tapped, and do not zoom back out. Fields are 16px there
+   (this rule only applies on iOS), so tapping one leaves the page as it is. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea,
+  .mantine-Input-input,
+  .mantine-PillsInputField-field,
+  .mantine-InputBase-input {
+    font-size: 16px !important;
+  }
+}
