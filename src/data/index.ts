@@ -285,6 +285,7 @@ export const accountTiles: AccountTiles = [
       'month_ids',
       'year_id',
     ],
+    optionalFields: ['category_ids'],
     regionOrTerritory: true,
     code: 'target_vs_achievement_category_report',
     api_url: 'bm/target_vs_achievement_category/report',
