@@ -105,6 +105,7 @@ const GenerateReport = () => {
   const [sortColumn, setSortColumn] = useState('');
   const [productsData, setProductsData] = useState([]);
   const [brands, setBrands] = useState([]);
+  const [categories, setCategories] = useState([]);
   const navigate = useNavigate();
   const user = useSelector(selectUser);
   const isRegionalManager = user?.is_region_manager;
@@ -119,7 +120,7 @@ const GenerateReport = () => {
     if (!fields) return;
     const dynFields = fields
       .map((field) => ({
-        [field]: ['territory_ids', 'month_ids', 'policy_ids', 'region_ids', 'brand_ids'].includes(field) ? [] : '',
+        [field]: ['territory_ids', 'month_ids', 'policy_ids', 'region_ids', 'brand_ids', 'category_ids'].includes(field) ? [] : '',
         date_from: dayjs(new Date()).format('DD-MM-YYYY'),
         date_to: dayjs(new Date()).format('DD-MM-YYYY'),
         is_yoy: false,
@@ -322,6 +323,33 @@ const GenerateReport = () => {
     }
   }, [fields]);
 
+  // Level one product categories, for the category wise report.
+  useEffect(() => {
+    if (fields?.includes('category_ids')) {
+      callApi(
+        'GET',
+        '/level-one-category',
+        {},
+        (res) => {
+          setCategories(
+            (res?.data?.level_one_category || []).map(
+              (category: { id: number; name: string }) => ({
+                label: category.name,
+                value: category.id,
+              }),
+            ),
+          );
+        },
+        () => {
+          setCategories([]);
+          toast.error('Error fetching categories', {
+            description: 'Please try again',
+          });
+        },
+      );
+    }
+  }, [fields]);
+
   const handleGenerateReport = () => {
     const missingFields = Object.keys(dynamicFields || {})?.filter((key) => {
       const value = dynamicFields[key];
@@ -341,6 +369,7 @@ const GenerateReport = () => {
           code === 'bm_account_status_area_wise_report' ||
           code === 'target_vs_achievement_report' ||
           code === 'target_vs_achievement_brand_report' ||
+          code === 'target_vs_achievement_category_report' ||
           code === 'bm_account_status_policy_wise_report') &&
         isRegionalManager &&
         key === 'territory_ids'
@@ -443,6 +472,7 @@ const GenerateReport = () => {
       code === 'bm_account_status_area_wise_report' ||
       code === 'target_vs_achievement_report' ||
       code === 'target_vs_achievement_brand_report' ||
+      code === 'target_vs_achievement_category_report' ||
       code === 'bm_account_status_policy_wise_report'
     ) {
       delete data.region_id;
@@ -679,6 +709,7 @@ const GenerateReport = () => {
           fields.includes('product_id') ||
           fields.includes('sort_column') ||
           fields.includes('brand_ids') ||
+          fields.includes('category_ids') ||
           fields.includes('month_ids') ||
           fields.includes('year_id') ||
           fields.includes('is_summary')) && (
@@ -881,6 +912,28 @@ const GenerateReport = () => {
                     setDynamicFields({
                       ...dynamicFields,
                       brand_ids: values.map(Number),
+                    })
+                  }
+                  searchable
+                  clearable
+                />
+              )}
+
+              {fields.includes('category_ids') && (
+                <MultiSelect
+                  label="Categories"
+                  withAsterisk={!optionalFields?.includes('category_ids')}
+                  placeholder={
+                    dynamicFields?.category_ids?.length > 0
+                      ? undefined
+                      : 'Select categories'
+                  }
+                  data={toOptions(categories)}
+                  value={(dynamicFields?.category_ids || []).map(String)}
+                  onChange={(values) =>
+                    setDynamicFields({
+                      ...dynamicFields,
+                      category_ids: values.map(Number),
                     })
                   }
                   searchable

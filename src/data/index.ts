@@ -274,6 +274,21 @@ export const accountTiles: AccountTiles = [
     code: 'target_vs_achievement_brand_report',
     api_url: 'bm/target_vs_achievement_brand/report',
   },
+  {
+    title: 'Target Vs Achievement Category Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: [
+      'region_ids',
+      'territory_ids',
+      'category_ids',
+      'month_ids',
+      'year_id',
+    ],
+    regionOrTerritory: true,
+    code: 'target_vs_achievement_category_report',
+    api_url: 'bm/target_vs_achievement_category/report',
+  },
 ];
 
 export const collectionTiles: AccountTiles = [
