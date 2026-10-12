@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionIcon,
   AppShell,
   Avatar,
+  Badge,
   Box,
   Burger,
   Divider,
@@ -19,7 +20,7 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { useDisclosure, useLocalStorage } from '@mantine/hooks';
 import {
   ArrowLeft,
   BadgeCheck,
@@ -29,6 +30,7 @@ import {
   FileText,
   Home as HomeIcon,
   LogOut,
+  type LucideIcon,
   Moon,
   Sun,
   UserRound,
@@ -57,6 +59,21 @@ const initials = (name?: string) =>
     .join('')
     .toUpperCase();
 
+// A menu entry's icon is a module's picture (an address) or a drawn icon.
+type NavEntry = {
+  title: string;
+  path: string;
+  icon?: string | LucideIcon;
+  count?: number;
+};
+
+const NAV_WIDTH = 264;
+const RAIL_WIDTH = 68;
+
+// Every screen mounts its own Layout, so how far the menu is scrolled is
+// kept here to outlive a change of screen.
+let menuScroll = 0;
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const user = useSelector(selectUser);
   const logo = useSelector(selectLogo);
@@ -72,7 +89,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] =
     useDisclosure();
-  const [desktopOpened, { toggle: toggleDesktop }] = useDisclosure(true);
+  // On a wide screen the menu narrows to a strip of icons; the choice is kept.
+  const [rail, setRail] = useLocalStorage({
+    key: 'team-menu-rail',
+    defaultValue: false,
+    getInitialValueInEffect: false,
+  });
+  // The strip is for wide screens; a phone's drawer is always full.
+  const railed = rail && !mobileOpened;
+  const menuViewport = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    menuViewport.current?.scrollTo({ top: menuScroll });
+  }, []);
   const [logoFailed, setLogoFailed] = useState(false);
 
   const links = useMemo(
@@ -132,6 +161,96 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { label: 'Account', icon: UserRound, path: '/profile' },
   ];
 
+  const isActive = (path: string) =>
+    path === '/'
+      ? pathname === '/'
+      : pathname === path || pathname.startsWith(`${path}/`);
+
+  const sections: { label?: string; items: NavEntry[] }[] = [
+    { items: [{ title: 'Home', path: '/', icon: HomeIcon }] },
+    { label: 'Modules', items: links.filter((link) => link.path !== '/reports') },
+    {
+      label: 'More',
+      items: [
+        { title: 'Reports', path: '/reports', icon: Reports },
+        {
+          title: 'Notifications',
+          path: '/notifications',
+          icon: Bell,
+          count: notificationCount,
+        },
+      ],
+    },
+  ].filter((section) => section.items.length > 0);
+
+  const entryIcon = (entry: NavEntry, size: number) => {
+    // A module with no picture still needs something to show in the strip.
+    if (!entry.icon) {
+      return (
+        <Text fw={600} size="sm" w={size} ta="center">
+          {entry.title.charAt(0).toUpperCase()}
+        </Text>
+      );
+    }
+    if (typeof entry.icon === 'string') {
+      return <Image src={entry.icon} alt="" w={size} h={size} fit="contain" />;
+    }
+    // Drawn icons sit in the same box as the pictures, so labels line up.
+    return (
+      <Box w={size} h={size} style={{ display: 'grid', placeItems: 'center' }}>
+        <entry.icon size={size - 6} />
+      </Box>
+    );
+  };
+
+  // One entry of the full-width menu.
+  const wideItem = (entry: NavEntry) => (
+    <NavLink
+      key={entry.path}
+      component={Link}
+      to={entry.path}
+      label={entry.title}
+      active={isActive(entry.path)}
+      onClick={closeMobile}
+      leftSection={entryIcon(entry, 26)}
+      rightSection={
+        entry.count ? (
+          <Badge size="sm" color="red" variant="filled" circle>
+            {entry.count > 99 ? '99+' : entry.count}
+          </Badge>
+        ) : undefined
+      }
+      style={{ borderRadius: 'var(--mantine-radius-md)' }}
+    />
+  );
+
+  // The same entry as an icon, with its name on hover.
+  const railItem = (entry: NavEntry) => {
+    const active = isActive(entry.path);
+    return (
+      <Tooltip key={entry.path} label={entry.title} position="right">
+        <Indicator
+          label={entry.count}
+          size={16}
+          color="red"
+          offset={6}
+          disabled={!entry.count}
+        >
+          <ActionIcon
+            component={Link}
+            to={entry.path}
+            variant={active ? 'light' : 'subtle'}
+            color={active ? undefined : 'gray'}
+            size={44}
+            aria-label={entry.title}
+          >
+            {entryIcon(entry, 26)}
+          </ActionIcon>
+        </Indicator>
+      </Tooltip>
+    );
+  };
+
   return (
     <AppShell
       // "alt": the sidebar runs the full height on the left, and the header
@@ -144,9 +263,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         height: { base: 'calc(60px + env(safe-area-inset-bottom))', sm: 0 },
       }}
       navbar={{
-        width: 264,
+        width: { base: NAV_WIDTH, sm: rail ? RAIL_WIDTH : NAV_WIDTH },
         breakpoint: 'sm',
-        collapsed: { mobile: !mobileOpened, desktop: !desktopOpened },
+        collapsed: { mobile: !mobileOpened },
       }}
       padding="md"
     >
@@ -165,10 +284,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           )}
           <Burger
             opened={false}
-            onClick={toggleDesktop}
+            onClick={() => setRail((current) => !current)}
             visibleFrom="sm"
             size="sm"
-            aria-label="Toggle navigation"
+            aria-label={rail ? 'Widen the menu' : 'Narrow the menu'}
           />
           {/* Phones only: wider screens have the page's own back arrow. */}
           {!isRoot && (
@@ -231,8 +350,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </AppShell.Header>
 
       <AppShell.Navbar>
-        <AppShell.Section p="sm" h={60}>
-          <Group h="100%" gap="xs" wrap="nowrap">
+        <AppShell.Section px="sm" h={60}>
+          <Group
+            h="100%"
+            gap="xs"
+            wrap="nowrap"
+            justify={railed ? 'center' : 'flex-start'}
+          >
             <Burger
               opened={mobileOpened}
               onClick={toggleMobile}
@@ -241,8 +365,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               aria-label="Close navigation"
             />
             <UnstyledButton
-              flex={1}
+              flex={railed ? undefined : 1}
               miw={0}
+              aria-label="Home"
               onClick={() => {
                 navigate('/');
                 closeMobile();
@@ -258,14 +383,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   radius="md"
                   onError={() => setLogoFailed(true)}
                 />
-                <Box miw={0}>
-                  <Text fw={600} size="sm" truncate>
-                    {user?.company?.name}
-                  </Text>
-                  <Text size="xs" c="dimmed" truncate>
-                    {user?.name}
-                  </Text>
-                </Box>
+                {!railed && (
+                  <Box miw={0}>
+                    <Text fw={600} size="sm" truncate lh={1.25}>
+                      {user?.company?.name}
+                    </Text>
+                    <Text size="xs" c="dimmed" truncate lh={1.25}>
+                      Team dashboard
+                    </Text>
+                  </Box>
+                )}
               </Group>
             </UnstyledButton>
           </Group>
@@ -273,28 +400,44 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         <Divider />
 
-        <AppShell.Section grow component={ScrollArea} px="sm" py="xs">
-          <Text size="xs" fw={500} c="dimmed" px="xs" py={6}>
-            Modules
-          </Text>
-          <Stack gap={2}>
-            {links.map((link) => (
-              <NavLink
-                key={link.title}
-                component={Link}
-                to={link.path}
-                label={link.title}
-                active={
-                  pathname === link.path || pathname.startsWith(`${link.path}/`)
-                }
-                onClick={closeMobile}
-                leftSection={
-                  link.icon ? (
-                    <Image src={link.icon} alt="" w={28} h={28} fit="contain" />
-                  ) : undefined
-                }
-                style={{ borderRadius: 'var(--mantine-radius-md)' }}
-              />
+        <AppShell.Section
+          grow
+          component={ScrollArea}
+          viewportRef={menuViewport}
+          onScrollPositionChange={({ y }: { y: number }) => {
+            menuScroll = y;
+          }}
+          px="sm"
+          py="sm"
+          type="scroll"
+        >
+          <Stack gap="md">
+            {sections.map((section, index) => (
+              <Stack
+                key={section.label || index}
+                gap={railed ? 4 : 2}
+                align={railed ? 'center' : 'stretch'}
+              >
+                {section.label &&
+                  (railed ? (
+                    <Divider mb={6} w="100%" />
+                  ) : (
+                    <Text
+                      size="xs"
+                      fw={600}
+                      c="dimmed"
+                      tt="uppercase"
+                      px="sm"
+                      mb={4}
+                      style={{ letterSpacing: '0.04em' }}
+                    >
+                      {section.label}
+                    </Text>
+                  ))}
+                {section.items.map((entry) =>
+                  railed ? railItem(entry) : wideItem(entry),
+                )}
+              </Stack>
             ))}
           </Stack>
         </AppShell.Section>
@@ -304,20 +447,36 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <AppShell.Section p="sm">
           <Menu position="right-end" width={240} shadow="md" withinPortal>
             <Menu.Target>
-              <UnstyledButton w="100%" p={6}>
-                <Group gap="sm" wrap="nowrap">
+              <UnstyledButton
+                w="100%"
+                p={railed ? 0 : 6}
+                aria-label="Account menu"
+                style={{ borderRadius: 'var(--mantine-radius-md)' }}
+              >
+                <Group
+                  gap="sm"
+                  wrap="nowrap"
+                  justify={railed ? 'center' : 'flex-start'}
+                >
                   <Avatar radius="md" color="initials" name={user?.name}>
                     {initials(user?.name)}
                   </Avatar>
-                  <Box miw={0} flex={1}>
-                    <Text size="sm" fw={500} truncate>
-                      {user?.name}
-                    </Text>
-                    <Text size="xs" c="dimmed" truncate>
-                      {user?.work_email}
-                    </Text>
-                  </Box>
-                  <ChevronsUpDown size={16} />
+                  {!railed && (
+                    <>
+                      <Box miw={0} flex={1}>
+                        <Text size="sm" fw={500} truncate>
+                          {user?.name}
+                        </Text>
+                        <Text size="xs" c="dimmed" truncate>
+                          {user?.work_email}
+                        </Text>
+                      </Box>
+                      <ChevronsUpDown
+                        size={16}
+                        color="var(--mantine-color-dimmed)"
+                      />
+                    </>
+                  )}
                 </Group>
               </UnstyledButton>
             </Menu.Target>

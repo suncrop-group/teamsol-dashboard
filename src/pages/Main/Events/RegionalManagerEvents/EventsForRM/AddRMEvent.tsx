@@ -174,6 +174,10 @@ const AddRMEvent = () => {
     }
   }, [territory]);
 
+  // Date Begin: today or one of the four days before it.
+  const earliest = dayjs().subtract(4, 'day').startOf('day').toDate();
+  const latest = dayjs().endOf('day').toDate();
+
   const handleAddEvent = () => {
     if (
       territory === '' ||
@@ -183,6 +187,17 @@ const AddRMEvent = () => {
       !dateEnd
     ) {
       toast.error('Please fill all the fields', { description: 'Error' });
+      return;
+    }
+
+    // A record being corrected keeps the date it was created with.
+    if (
+      !record &&
+      (dayjs(dateBegin).isBefore(earliest) || dayjs(dateBegin).isAfter(latest))
+    ) {
+      toast.error('Date Begin must be today or within the last 4 days', {
+        description: 'Error',
+      });
       return;
     }
 
@@ -382,6 +397,8 @@ const AddRMEvent = () => {
             valueFormat="DD/MM/YYYY HH:mm"
             leftSection={<CalendarIcon size={16} />}
             value={dateBegin}
+            minDate={earliest}
+            maxDate={latest}
             onChange={(value) =>
               setDateBegin(value ? dayjs(value).toDate() : null)
             }
@@ -394,6 +411,7 @@ const AddRMEvent = () => {
             valueFormat="DD/MM/YYYY HH:mm"
             leftSection={<CalendarIcon size={16} />}
             value={dateEnd}
+            minDate={earliest}
             onChange={(value) =>
               setDateEnd(value ? dayjs(value).toDate() : null)
             }

@@ -173,6 +173,10 @@ const AddEvent = () => {
     fetchEventTemplates();
   }, [territory]);
 
+  // Date Begin: today or one of the four days before it.
+  const earliest = dayjs().subtract(4, "day").startOf("day").toDate();
+  const latest = dayjs().endOf("day").toDate();
+
   const handleAddEvent = () => {
     if (
       territory === "" ||
@@ -183,6 +187,17 @@ const AddEvent = () => {
       eventTemId === ""
     ) {
       toast.error("Please fill all the fields", {
+        description: "Error",
+      });
+      return;
+    }
+
+    // A record being corrected keeps the date it was created with.
+    if (
+      !record &&
+      (dayjs(dateBegin).isBefore(earliest) || dayjs(dateBegin).isAfter(latest))
+    ) {
+      toast.error("Date Begin must be today or within the last 4 days", {
         description: "Error",
       });
       return;
@@ -269,9 +284,6 @@ const AddEvent = () => {
       value: item.id,
     })) || [];
 
-  // Same rule as before: any day whose midnight is already past is disabled.
-  const isPastDay = (date: string) => dayjs(date).toDate() < new Date();
-
   return (
     <Container size="sm" px={0}>
       <PageHeader title={record ? "Edit Event" : "Add Event"} back />
@@ -352,7 +364,8 @@ const AddEvent = () => {
               leftSection={<CalendarIcon size={16} />}
               value={dateBegin}
               onChange={(value) => value && setDateBegin(dayjs(value).toDate())}
-              excludeDate={isPastDay}
+              minDate={earliest}
+              maxDate={latest}
               error={errorFor("date_begin")}
             />
             <TimeInput
@@ -371,7 +384,7 @@ const AddEvent = () => {
               leftSection={<CalendarIcon size={16} />}
               value={dateEnd}
               onChange={(value) => value && setDateEnd(dayjs(value).toDate())}
-              excludeDate={isPastDay}
+              minDate={earliest}
               error={errorFor("date_end")}
             />
             <TimeInput
