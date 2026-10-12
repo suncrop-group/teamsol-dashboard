@@ -17,6 +17,7 @@ import {
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { selectUser } from '@/redux/slices/AuthSlice';
+import { accountTiles, collectionTiles, saleReports } from '@/data';
 import { callApi } from '@/api';
 import { errorMessage } from '@/api/v2';
 import { toast } from '@/lib/toast';
@@ -86,10 +87,14 @@ const OptionSwitch = ({ label, checked, onChange }) => (
   </Paper>
 );
 
+const allReports = [...accountTiles, ...collectionTiles, ...saleReports];
+
 const GenerateReport = () => {
   const { state } = useLocation();
+  // The browser keeps the navigation state across reloads, so the form is
+  // read from the current definition; the state only says which report.
   const { title, fields, optionalFields, code, regionOrTerritory } =
-    state || {};
+    allReports.find((tile) => tile.code === state?.code) || state || {};
   const [loading, setLoading] = useState(false);
   const [dynamicFields, setDynamicFields] = useState(null);
   const { territories, region } = useSelector(selectUser);
