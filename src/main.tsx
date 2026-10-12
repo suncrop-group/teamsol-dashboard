@@ -13,6 +13,9 @@ import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { selectColorScheme } from './redux/slices/ProjectSlice.ts';
 import { buildTheme } from './theme.ts';
+import { registerPwa } from './pwa.tsx';
+
+registerPwa();
 
 const ThemedApp = () => {
   const colorScheme = useSelector(selectColorScheme);

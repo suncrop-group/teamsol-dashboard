@@ -17,6 +17,8 @@ export default defineConfig({
     // connection; everything from the API is always fetched live.
     VitePWA({
       registerType: 'autoUpdate',
+      // Registered by src/pwa.tsx, which also checks for and applies updates.
+      injectRegister: false,
       includeAssets: ['suncrop-logo.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'TeamSol',
