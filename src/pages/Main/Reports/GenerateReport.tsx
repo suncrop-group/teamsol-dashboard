@@ -413,10 +413,12 @@ const GenerateReport = () => {
       setLoading(false);
     };
 
-    // The company and the Odoo user are set by the server.
+    // The company is sent with every report; the server still checks it
+    // against the signed-in account and sets the Odoo user itself.
     const data = {
       ...dynamicFields,
       with_party: 'with_party',
+      company_id: user?.company?.id ?? user?.company_id,
     };
 
     if (fields.includes('is_summary')) {
