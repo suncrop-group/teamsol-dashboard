@@ -12,3 +12,31 @@ body {
     var(--mantine-color-dark-8)
   );
 }
+
+/* Phones: no scroll bars, as in the mobile app (the page still scrolls),
+   and a clear gap after the last thing on a screen so it never ends up
+   against or under the bottom tabs. */
+@media (max-width: 47.99em) {
+  html,
+  body,
+  * {
+    scrollbar-width: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .mantine-ScrollArea-scrollbar {
+    display: none;
+  }
+
+  .mantine-AppShell-main {
+    padding-bottom: calc(
+      60px + env(safe-area-inset-bottom, 0px) + var(--app-shell-padding, 16px) +
+        24px
+    );
+  }
+}
