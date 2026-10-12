@@ -864,7 +864,7 @@ const GenerateReport = () => {
               {fields.includes('brand_ids') && (
                 <MultiSelect
                   label="Brands"
-                  withAsterisk
+                  withAsterisk={!optionalFields?.includes('brand_ids')}
                   placeholder={
                     dynamicFields?.brand_ids?.length > 0
                       ? undefined
