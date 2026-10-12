@@ -34,13 +34,13 @@ import { selectUser } from '@/redux/slices/AuthSlice';
 
 export type Tone = 'blue' | 'green' | 'yellow' | 'red' | 'gray';
 
-// The app's tile colours: [light, dark] for the icon and for its tile.
+// The app's tile colours, defined for both schemes in index.css.
 const TONES: Record<Tone, { fg: string; bg: string }> = {
-  green: { fg: 'light-dark(#15803d, #4ade80)', bg: 'light-dark(#dcfce7, #14532d)' },
-  yellow: { fg: 'light-dark(#a16207, #facc15)', bg: 'light-dark(#fef9c3, #713f12)' },
-  red: { fg: 'light-dark(#b91c1c, #f87171)', bg: 'light-dark(#fee2e2, #7f1d1d)' },
-  blue: { fg: 'light-dark(#1d4ed8, #60a5fa)', bg: 'light-dark(#dbeafe, #1e3a8a)' },
-  gray: { fg: 'light-dark(#4b5563, #9ca3af)', bg: 'light-dark(#f3f4f6, #374151)' },
+  green: { fg: 'var(--tone-green-fg)', bg: 'var(--tone-green-bg)' },
+  yellow: { fg: 'var(--tone-yellow-fg)', bg: 'var(--tone-yellow-bg)' },
+  red: { fg: 'var(--tone-red-fg)', bg: 'var(--tone-red-bg)' },
+  blue: { fg: 'var(--tone-blue-fg)', bg: 'var(--tone-blue-bg)' },
+  gray: { fg: 'var(--tone-gray-fg)', bg: 'var(--tone-gray-bg)' },
 };
 
 /** The reports tab's sections: where each goes, its icon and its colour. */
@@ -130,7 +130,7 @@ export const IconTile = ({
       flexShrink: 0,
     }}
   >
-    <Icon size={Math.round(size * 0.46)} color={TONES[tone].fg} />
+    <Icon size={Math.round(size * 0.46)} style={{ color: TONES[tone].fg }} />
   </Box>
 );
 

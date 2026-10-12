@@ -56,9 +56,15 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      // The PDF renderer's build for older browsers (see
+      // src/pages/Main/Reports/pdfSetup.ts).
+      {
+        find: /^pdfjs-dist$/,
+        replacement: 'pdfjs-dist/legacy/build/pdf.mjs',
+      },
+    ],
   },
   build: {
     rollupOptions: {

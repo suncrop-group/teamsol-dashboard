@@ -6,11 +6,56 @@ body,
   min-height: 100%;
 }
 
+/* Colours that differ between the light and dark schemes. Written as
+   variables switched on Mantine's scheme attribute, not with light-dark():
+   iPhones before iOS 17.5 do not know that function and drop the whole
+   declaration, which left icons and tiles without a colour. */
+:root {
+  --app-page: var(--mantine-color-gray-0);
+  --app-surface: var(--mantine-color-white);
+  --app-panel: var(--mantine-color-gray-0);
+  --app-track: var(--mantine-color-gray-2);
+  --app-viewer: var(--mantine-color-gray-1);
+  --app-shadow-lg: rgba(100, 116, 139, 0.35);
+  --app-shadow-md: rgba(100, 116, 139, 0.32);
+  --app-shadow-sm: rgba(100, 116, 139, 0.35);
+  --app-shadow-inset: rgba(100, 116, 139, 0.18);
+  --tone-green-fg: #15803d;
+  --tone-green-bg: #dcfce7;
+  --tone-yellow-fg: #a16207;
+  --tone-yellow-bg: #fef9c3;
+  --tone-red-fg: #b91c1c;
+  --tone-red-bg: #fee2e2;
+  --tone-blue-fg: #1d4ed8;
+  --tone-blue-bg: #dbeafe;
+  --tone-gray-fg: #4b5563;
+  --tone-gray-bg: #f3f4f6;
+}
+
+:root[data-mantine-color-scheme='dark'] {
+  --app-page: var(--mantine-color-dark-8);
+  --app-surface: var(--mantine-color-dark-6);
+  --app-panel: var(--mantine-color-dark-7);
+  --app-track: var(--mantine-color-dark-4);
+  --app-viewer: var(--mantine-color-dark-8);
+  --app-shadow-lg: rgba(0, 0, 0, 0.65);
+  --app-shadow-md: rgba(0, 0, 0, 0.6);
+  --app-shadow-sm: rgba(0, 0, 0, 0.6);
+  --app-shadow-inset: rgba(0, 0, 0, 0.5);
+  --tone-green-fg: #4ade80;
+  --tone-green-bg: #14532d;
+  --tone-yellow-fg: #facc15;
+  --tone-yellow-bg: #713f12;
+  --tone-red-fg: #f87171;
+  --tone-red-bg: #7f1d1d;
+  --tone-blue-fg: #60a5fa;
+  --tone-blue-bg: #1e3a8a;
+  --tone-gray-fg: #9ca3af;
+  --tone-gray-bg: #374151;
+}
+
 body {
-  background-color: light-dark(
-    var(--mantine-color-gray-0),
-    var(--mantine-color-dark-8)
-  );
+  background-color: var(--app-page);
 }
 
 /* Phones: no scroll bars, as in the mobile app (the page still scrolls),

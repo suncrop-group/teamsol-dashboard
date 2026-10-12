@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -25,7 +25,8 @@ import { toast } from '@/lib/toast';
 import { PageHeader } from '@/components/app';
 import { CalendarIcon, FileText } from 'lucide-react';
 import dayjs from 'dayjs';
-import { saveAs } from 'file-saver';
+import LazyReportViewer from './LazyReportViewer';
+import { canSharePdf, needsPdfViewer, savePdf, sharePdf } from '@/lib/pdfFile';
 
 interface Option {
   label: string;
@@ -90,9 +91,6 @@ const OptionSwitch = ({ label, checked, onChange }) => (
 
 const allReports = [...accountTiles, ...collectionTiles, ...saleReports];
 
-// Only phones use it, and it brings the PDF renderer with it.
-const ReportViewer = lazy(() => import('./ReportViewer'));
-
 const GenerateReport = () => {
   const { state } = useLocation();
   // The browser keeps the navigation state across reloads, so the form is
@@ -105,10 +103,12 @@ const GenerateReport = () => {
   const [customers, setCustomers] = useState([]);
   const [report, setReport] = useState('');
   const [fileName, setFileName] = useState('');
-  // Below the `sm` width the report opens in the app-style viewer.
-  const phone = useMediaQuery('(max-width: 47.99em)', false, {
+  // On a small screen, and on any phone or tablet (which cannot show a PDF
+  // inside the page), the report opens in the app-style viewer.
+  const narrow = useMediaQuery('(max-width: 47.99em)', false, {
     getInitialValueInEffect: false,
   });
+  const phone = narrow || needsPdfViewer();
   const [viewing, setViewing] = useState(false);
   const [policy, setPolicy] = useState([]);
   const [sortColumn, setSortColumn] = useState('');
@@ -535,58 +535,30 @@ const GenerateReport = () => {
     callApi('POST', '/v2/reports/generate', { code, data }, onSuccess, onError);
   };
 
-  const reportBlob = () => {
-    const base64WithoutPrefix = report.replace(
-      'data:application/pdf;base64,',
-      '',
-    );
-    const byteCharacters = atob(base64WithoutPrefix);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    return new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-  };
-
   // The phone's own share sheet, where the browser can share a file.
-  const canShare = (() => {
-    try {
-      return (
-        typeof navigator.canShare === 'function' &&
-        navigator.canShare({
-          files: [new File([''], 'report.pdf', { type: 'application/pdf' })],
-        })
-      );
-    } catch {
-      return false;
-    }
-  })();
+  const canShare = canSharePdf();
 
   const shareReport = async () => {
     try {
-      await navigator.share({
-        files: [new File([reportBlob()], fileName, { type: 'application/pdf' })],
-        title: title,
-      });
-    } catch (error) {
-      // Closing the share sheet is not a failure.
-      if (error?.name !== 'AbortError') {
-        toast.error('Could not share the report', { description: 'Error' });
-      }
+      await sharePdf(report, fileName, title);
+    } catch {
+      toast.error('Could not share the report', { description: 'Error' });
     }
   };
 
-  const downloadReport = () => {
+  const downloadReport = async () => {
     if (!report) {
       toast.error('No PDF found to download', { description: 'Error' });
       return;
     }
 
     try {
-      saveAs(reportBlob(), fileName);
-      toast.success('Download Complete', {
-        description: 'PDF saved to Downloads folder',
-      });
+      const how = await savePdf(report, fileName);
+      if (how === 'downloaded') {
+        toast.success('Download Complete', {
+          description: 'PDF saved to Downloads folder',
+        });
+      }
     } catch (error) {
       console.error('Error downloading PDF:', error);
       toast.error('Failed to save the PDF file', { description: 'Error' });
@@ -654,18 +626,15 @@ const GenerateReport = () => {
             </Stack>
           </Stack>
         </Paper>
-        <Suspense fallback={null}>
-          {viewing && (
-            <ReportViewer
-              opened
-              report={report}
-              name={fileName}
-              onClose={() => setViewing(false)}
-              onDownload={downloadReport}
-              onShare={canShare ? shareReport : undefined}
-            />
-          )}
-        </Suspense>
+        {viewing && (
+          <LazyReportViewer
+            report={report}
+            name={fileName}
+            onClose={() => setViewing(false)}
+            onDownload={downloadReport}
+            onShare={canShare ? shareReport : undefined}
+          />
+        )}
       </Container>
     );
   }

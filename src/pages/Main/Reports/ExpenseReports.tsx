@@ -21,7 +21,8 @@ import dayjs from 'dayjs';
 import { months } from '@/data';
 import { EmptyState, PageHeader, StatusBadge } from '@/components/app';
 import { Eye, FileText } from 'lucide-react';
-import { saveAs } from 'file-saver';
+import LazyReportViewer from './LazyReportViewer';
+import { canSharePdf, needsPdfViewer, savePdf, sharePdf } from '@/lib/pdfFile';
 
 const ExpenseReportRow = ({ item, handleOpenRemarks }) => {
   return (
@@ -75,6 +76,10 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
   const [loading, setLoading] = useState(false);
   const [pdfBase64, setPdfBase64] = useState(null);
   const [fileName, setFileName] = useState('');
+  // A phone or tablet cannot show a PDF inside the page; it gets the viewer.
+  const useViewer = needsPdfViewer();
+  const [viewing, setViewing] = useState(false);
+  const canShare = canSharePdf();
   const user = useSelector(selectUser);
 
   const fetchReportData = async (month) => {
@@ -122,30 +127,29 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
     }
   };
 
-  const downloadReport = () => {
+  const downloadReport = async () => {
     if (!pdfBase64) {
       toast.error('No PDF found to download', { description: 'Error' });
       return;
     }
     try {
-      const base64WithoutPrefix = pdfBase64.replace(
-        'data:application/pdf;base64,',
-        '',
-      );
-      const byteCharacters = atob(base64WithoutPrefix);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      const how = await savePdf(pdfBase64, fileName);
+      if (how === 'downloaded') {
+        toast.success('Download Complete', {
+          description: 'PDF saved to Downloads folder',
+        });
       }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      saveAs(blob, fileName);
-      toast.success('Download Complete', {
-        description: 'PDF saved to Downloads folder',
-      });
     } catch (error) {
       console.error('Error downloading PDF:', error);
       toast.error('Failed to save the PDF file', { description: 'Error' });
+    }
+  };
+
+  const shareReport = async () => {
+    try {
+      await sharePdf(pdfBase64, fileName, 'Expense Report');
+    } catch {
+      toast.error('Could not share the report', { description: 'Error' });
     }
   };
 
@@ -247,7 +251,29 @@ const GenerateExpenseReportModal = ({ onClose, onReportSubmitted }) => {
           allowDeselect={false}
         />
       )}
-      {pdfBase64 && !loading && (
+      {pdfBase64 && !loading && useViewer && (
+        <Paper withBorder p="md">
+          <Stack align="center" gap="xs">
+            <FileText size={36} color="var(--mantine-color-dimmed)" />
+            <Text fw={600} ta="center" style={{ wordBreak: 'break-word' }}>
+              {fileName}
+            </Text>
+            <Button fullWidth onClick={() => setViewing(true)}>
+              View Report
+            </Button>
+          </Stack>
+        </Paper>
+      )}
+      {pdfBase64 && viewing && (
+        <LazyReportViewer
+          report={pdfBase64}
+          name={fileName}
+          onClose={() => setViewing(false)}
+          onDownload={downloadReport}
+          onShare={canShare ? shareReport : undefined}
+        />
+      )}
+      {pdfBase64 && !loading && !useViewer && (
         <Box
           component="iframe"
           src={`data:application/pdf;base64,${pdfBase64}`}

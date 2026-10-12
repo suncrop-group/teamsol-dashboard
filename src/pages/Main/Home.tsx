@@ -62,16 +62,16 @@ const gaugeColor = (pct: number) =>
 // The home page's look: large rounded surfaces that sit softly above the
 // page, with a wide diffuse shadow and no border. Each value adapts to the
 // colour scheme.
-const SURFACE = 'light-dark(var(--mantine-color-white), var(--mantine-color-dark-6))';
+const SURFACE = 'var(--app-surface)';
 const SHADOW_LG =
-  '0 30px 60px -20px light-dark(rgba(100, 116, 139, 0.35), rgba(0, 0, 0, 0.65))';
+  '0 30px 60px -20px var(--app-shadow-lg)';
 const SHADOW_MD =
-  '0 16px 32px -14px light-dark(rgba(100, 116, 139, 0.32), rgba(0, 0, 0, 0.6))';
+  '0 16px 32px -14px var(--app-shadow-md)';
 const SHADOW_SM =
-  '0 8px 18px -8px light-dark(rgba(100, 116, 139, 0.35), rgba(0, 0, 0, 0.6))';
+  '0 8px 18px -8px var(--app-shadow-sm)';
 // A recessed panel, for the gauge.
 const INSET =
-  'inset 0 2px 10px light-dark(rgba(100, 116, 139, 0.18), rgba(0, 0, 0, 0.5))';
+  'inset 0 2px 10px var(--app-shadow-inset)';
 
 const raised = (shadow: string, radius: number) => ({
   background: SURFACE,
@@ -94,7 +94,7 @@ const ArcGauge = ({ pct }: { pct: number }) => {
       thickness={16}
       value={Math.min(Math.max(pct, 0), 100)}
       filledSegmentColor={gaugeColor(pct)}
-      emptySegmentColor="light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4))"
+      emptySegmentColor="var(--app-track)"
       transitionDuration={600}
       labelPosition="bottom"
       label={
@@ -249,7 +249,7 @@ const TargetWidgetV4 = ({
             borderRadius: 36,
             boxShadow: INSET,
             background:
-              'light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-7))',
+              'var(--app-panel)',
           }}
         >
           <ArcGauge pct={pct} />
@@ -264,6 +264,35 @@ const TargetWidgetV4 = ({
       </Flex>
     </Box>
   );
+};
+
+type TargetFigures = {
+  m_target: number;
+  m_achievement: number;
+  y_target: number;
+  y_achievement: number;
+};
+
+// The last Target vs Achievement figures are kept on the device, so the
+// home screen shows them at once and refreshes them in the background.
+const targetCacheKey = (user) =>
+  `target-vs-achievement:${user?.company?.id ?? user?.company_id ?? ''}:${user?.id ?? ''}`;
+
+const readTargetCache = (user): TargetFigures | null => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(targetCacheKey(user)) || 'null');
+    return saved && typeof saved.m_target === 'number' ? saved : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeTargetCache = (user, figures: TargetFigures) => {
+  try {
+    localStorage.setItem(targetCacheKey(user), JSON.stringify(figures));
+  } catch {
+    // Storage full or blocked: the figures are simply fetched next time.
+  }
 };
 
 const Home = () => {
@@ -282,24 +311,25 @@ const Home = () => {
     }[]
   >([]);
   const navigate = useNavigate();
-  const [targetData, setTargetData] = useState<{
-    m_target: number;
-    m_achievement: number;
-    y_target: number;
-    y_achievement: number;
-  }>({
-    m_target: 0,
-    m_achievement: 0,
-    y_target: 0,
-    y_achievement: 0,
-  });
+  const [targetData, setTargetData] = useState<TargetFigures>(
+    () =>
+      readTargetCache(user) || {
+        m_target: 0,
+        m_achievement: 0,
+        y_target: 0,
+        y_achievement: 0,
+      },
+  );
   const [targetLoading, setTargetLoading] = useState(false);
 
   // console.log({ user });
 
   useEffect(() => {
     if (!user) return;
-    setTargetLoading(true);
+    // With saved figures on screen there is nothing to wait for.
+    const cached = readTargetCache(user);
+    if (cached) setTargetData(cached);
+    setTargetLoading(!cached);
 
     // First fetch the current target configuration (month and year)
     callApi(
@@ -345,12 +375,14 @@ const Home = () => {
             };
           }) => {
             setTargetLoading(false);
-            setTargetData({
+            const figures = {
               m_target: r.data.m_target,
               m_achievement: r.data.m_achievement,
               y_target: r.data.y_target,
               y_achievement: r.data.y_achievement,
-            });
+            };
+            setTargetData(figures);
+            writeTargetCache(user, figures);
           },
           (e) => {
             setTargetLoading(false);
@@ -364,7 +396,16 @@ const Home = () => {
       },
       false,
     );
-  }, [user]);
+    // Once per person and area, not each time the profile object is replaced.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    user?.id,
+    user?.company?.id,
+    user?.region_id,
+    user?.territory_ids?.[0],
+    user?.is_region_manager,
+    user?.is_territory_manager,
+  ]);
 
   useEffect(() => {
     const onSuccess = (r) => {

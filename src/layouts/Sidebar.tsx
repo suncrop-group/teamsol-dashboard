@@ -520,7 +520,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </AppShell.Section>
       </AppShell.Navbar>
 
-      <AppShell.Main bg="light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))">
+      <AppShell.Main bg="var(--app-page)">
         {children}
       </AppShell.Main>
 
