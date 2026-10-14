@@ -23,7 +23,10 @@ export const pkToday = (): Date => dayjs(pkDay()).startOf('day').toDate();
  */
 export const entryDateLimits = () => {
   const today = dayjs(pkDay()).startOf('day');
-  return { minDate: today.subtract(ENTRY_DAYS_BACK, 'day').toDate(), maxDate: today.toDate() };
+  return {
+    minDate: today.subtract(ENTRY_DAYS_BACK, 'day').toDate(),
+    maxDate: today.toDate(),
+  };
 };
 
 /** For a date picker's `excludeDate`: true for a day outside that window. */
@@ -31,4 +34,17 @@ export const isEntryDateDisabled = (value: string | Date): boolean => {
   const day = dayjs(value).startOf('day');
   const { minDate, maxDate } = entryDateLimits();
   return day.isBefore(minDate) || day.isAfter(maxDate);
+};
+
+/**
+ * Whether a saved entry's date (stored as UTC midnight of its day) is today
+ * or within the last ENTRY_DAYS_BACK days in Pakistan. A daily activity can
+ * only be cancelled then; the server checks the same.
+ */
+export const isWithinEntryDays = (value: string | Date): boolean => {
+  const day = new Date(value).toISOString().slice(0, 10);
+  const earliest = pkDay(
+    new Date(Date.now() - ENTRY_DAYS_BACK * 24 * 60 * 60 * 1000),
+  );
+  return day >= earliest && day <= pkDay();
 };

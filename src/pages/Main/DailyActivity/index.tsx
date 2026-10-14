@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { callApi } from '@/api';
-import { isFailed, recordRef, useQueuedRefresh } from '@/api/v2';
+import { errorMessage, isFailed, recordRef, useQueuedRefresh } from '@/api/v2';
 import dayjs from 'dayjs';
 import {
   ActionIcon,
@@ -33,10 +33,13 @@ import {
   Gauge,
   Route,
   Grid3X3,
+  X,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { isWithinEntryDays } from '@/utils/dates';
 import { DateFilter, type DateRange } from '@/components/DateFilter';
 import {
+  ConfirmModal,
   EmptyState,
   FailedActions,
   PageHeader,
@@ -63,9 +66,19 @@ interface Activity {
 
 interface ActivityItemProps {
   item: Activity;
+  onCancel: (item: Activity) => void;
   onEdit: (item: Activity) => void;
   onChanged: () => void;
 }
+
+const isCancelled = (item: Activity) =>
+  String(item.status || '').toLowerCase() === 'cancelled';
+
+// Odoo deletes a cancelled activity; ours stays, marked cancelled. A failed
+// one is discarded instead. Only an activity of the last few days, the days
+// one may be entered for.
+const canCancel = (item: Activity) =>
+  !isFailed(item) && !isCancelled(item) && isWithinEntryDays(item.date);
 
 // An activity Odoo refused: the reason, and edit / resend / discard.
 const Failed = ({ item, onEdit, onChanged }: ActivityItemProps) =>
@@ -76,6 +89,23 @@ const Failed = ({ item, onEdit, onChanged }: ActivityItemProps) =>
       onEdit={() => onEdit(item)}
       onChanged={onChanged}
     />
+  ) : null;
+
+const CancelButton = ({
+  item,
+  onCancel,
+  card,
+}: ActivityItemProps & { card?: boolean }) =>
+  canCancel(item) ? (
+    <Button
+      color="red"
+      variant="light"
+      size={card ? 'sm' : 'xs'}
+      leftSection={card ? <X size={16} /> : undefined}
+      onClick={() => onCancel(item)}
+    >
+      Cancel
+    </Button>
   ) : null;
 
 interface GroupingOptions {
@@ -95,7 +125,12 @@ const ActivityCard = (props: ActivityItemProps) => {
     <Card withBorder padding="md">
       <Stack gap="sm">
         {/* Header with ID and Status */}
-        <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+        <Group
+          justify="space-between"
+          align="flex-start"
+          wrap="nowrap"
+          gap="xs"
+        >
           <Box flex={1} miw={0}>
             <Text fw={600}>Activity {recordRef(item)}</Text>
             <Group gap="xs" mt={4} c="dimmed" wrap="nowrap">
@@ -150,6 +185,7 @@ const ActivityCard = (props: ActivityItemProps) => {
         </SimpleGrid>
 
         <Failed {...props} />
+        <CancelButton {...props} card />
       </Stack>
     </Card>
   );
@@ -203,6 +239,9 @@ const ActivityRow = (props: ActivityItemProps) => {
           <Failed {...props} />
         </Stack>
       </Table.Td>
+      <Table.Td>
+        <CancelButton {...props} />
+      </Table.Td>
     </Table.Tr>
   );
 };
@@ -217,6 +256,8 @@ const DailyActivity: React.FC = () => {
     DateRange | undefined
   >(undefined);
   const [showGrouping, setShowGrouping] = useState(false);
+  const [toCancel, setToCancel] = useState<Activity | null>(null);
+  const [loadingCancel, setLoadingCancel] = useState(false);
 
   const [groupBy, setGroupBy] = useState<GroupingOptions>({
     regions: false,
@@ -257,12 +298,15 @@ const DailyActivity: React.FC = () => {
     setFilteredActivities(activities);
   }, [activities]);
 
-  // Days that already have an activity, so the form can block them.
+  // Days that already have an activity, so the form can block them. A
+  // cancelled one is gone from Odoo, so its day is free again.
   const takenDates = () =>
-    activities.map((activity) => ({
-      date: dayjs(activity.date).format('YYYY-MM-DD'),
-      id: activity._id,
-    }));
+    activities
+      .filter((activity) => !isCancelled(activity))
+      .map((activity) => ({
+        date: dayjs(activity.date).format('YYYY-MM-DD'),
+        id: activity._id,
+      }));
 
   const handleAddActivity = () => {
     navigate('/add-daily-activity', {
@@ -271,7 +315,35 @@ const DailyActivity: React.FC = () => {
     });
   };
 
+  const onConfirmCancel = () => {
+    if (!toCancel) return;
+
+    setLoadingCancel(true);
+    callApi(
+      'POST',
+      `${RESOURCE}/${toCancel._id}/cancel`,
+      {},
+      () => {
+        toast.success('Daily activity cancelled');
+        setLoadingCancel(false);
+        setToCancel(null);
+        fetchDailyActivities(true);
+      },
+      (error) => {
+        setLoadingCancel(false);
+        setToCancel(null);
+        toast.error(
+          errorMessage(
+            error,
+            'Failed to cancel daily activity. Please try again.',
+          ),
+        );
+      },
+    );
+  };
+
   const rowProps = {
+    onCancel: setToCancel,
     onEdit: (item: Activity) =>
       navigate('/add-daily-activity', {
         state: { record: item, dates: takenDates() },
@@ -361,7 +433,6 @@ const DailyActivity: React.FC = () => {
   };
 
   const groupedActivities = createGroupedActivities();
-
 
   const isGrouped = Object.values(groupBy).some(Boolean);
 
@@ -464,6 +535,7 @@ const DailyActivity: React.FC = () => {
                         <Table.Th>Closing Meter</Table.Th>
                         <Table.Th>KM Traveled</Table.Th>
                         <Table.Th>Status</Table.Th>
+                        <Table.Th>Actions</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -485,6 +557,20 @@ const DailyActivity: React.FC = () => {
           </Stack>
         )}
       </Paper>
+
+      <ConfirmModal
+        opened={!!toCancel}
+        onClose={() => setToCancel(null)}
+        onConfirm={onConfirmCancel}
+        title="Cancel Daily Activity"
+        confirmLabel="Yes, Cancel"
+        cancelLabel="No, Keep It"
+        loading={loadingCancel}
+      >
+        Are you sure you want to cancel activity{' '}
+        {toCancel ? recordRef(toCancel) : ''}? It will be deleted from Odoo.
+        This action cannot be undone.
+      </ConfirmModal>
 
       <Modal
         opened={showGrouping}

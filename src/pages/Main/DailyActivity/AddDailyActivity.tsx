@@ -100,12 +100,19 @@ const AddDailyActivity: React.FC = () => {
           interface RawActivity {
             _id: string;
             date: string | Date;
+            status?: string;
           }
+          // A cancelled activity is gone from Odoo; its day is free again.
           const mapped: ExistingActivityDate[] = Array.isArray(resp.data)
-            ? resp.data.map((a: RawActivity) => ({
-                date: dayjs(a.date).format('YYYY-MM-DD'),
-                id: a._id,
-              }))
+            ? resp.data
+                .filter(
+                  (a: RawActivity) =>
+                    String(a.status || '').toLowerCase() !== 'cancelled',
+                )
+                .map((a: RawActivity) => ({
+                  date: dayjs(a.date).format('YYYY-MM-DD'),
+                  id: a._id,
+                }))
             : [];
           setExistingActivities(withoutRecord(mapped));
           setExistingDatesLoading(false);
@@ -310,7 +317,12 @@ const AddDailyActivity: React.FC = () => {
             description={
               <>
                 {existingDatesLoading && (
-                  <Text span size="xs" c="var(--mantine-color-text)" display="block">
+                  <Text
+                    span
+                    size="xs"
+                    c="var(--mantine-color-text)"
+                    display="block"
+                  >
                     Loading existing dates…
                   </Text>
                 )}
@@ -381,7 +393,9 @@ const AddDailyActivity: React.FC = () => {
             label="Remarks"
             placeholder="Additional remarks"
             value={formData.remarks}
-            onChange={(e) => handleInputChange('remarks', e.currentTarget.value)}
+            onChange={(e) =>
+              handleInputChange('remarks', e.currentTarget.value)
+            }
             rows={3}
           />
 
