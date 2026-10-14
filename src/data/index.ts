@@ -290,6 +290,10 @@ export const accountTiles: AccountTiles = [
     code: 'target_vs_achievement_category_report',
     api_url: 'bm/target_vs_achievement_category/report',
   },
+];
+
+// NAP achievement and target reports, for regional and territory managers.
+export const napReports: AccountTiles = [
   {
     title: 'RSM NAP Achievement Report',
     icon: Reports,

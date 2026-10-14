@@ -79,6 +79,13 @@ export const REPORT_SECTIONS: {
     icon: ChartColumn,
     tone: 'red',
   },
+  {
+    title: 'NAP Reports',
+    description: 'NAP achievement and targets',
+    path: '/nap-reports',
+    icon: Target,
+    tone: 'blue',
+  },
 ];
 
 // Only an employee who receives other people's expense reports manages them.

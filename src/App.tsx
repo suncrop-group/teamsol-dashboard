@@ -43,6 +43,7 @@ import Reports from './pages/Main/Reports';
 import AccountingReports from './pages/Main/Reports/AccountReports';
 import GenerateReport from './pages/Main/Reports/GenerateReport';
 import CollectionReports from './pages/Main/Reports/CollectionReports';
+import NapReports from './pages/Main/Reports/NapReports';
 import ExpenseReports from './pages/Main/Reports/ExpenseReports';
 import ManageExpenseReports from './pages/Main/Reports/ManageExpenseReports';
 import SalesReports from './pages/Main/Reports/SalesReports';
@@ -429,6 +430,14 @@ function App() {
         element={
           <ProtectedRoute>
             <CollectionReports />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/nap-reports"
+        element={
+          <ProtectedRoute>
+            <NapReports />
           </ProtectedRoute>
         }
       />

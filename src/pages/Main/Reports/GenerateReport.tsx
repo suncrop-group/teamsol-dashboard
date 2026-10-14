@@ -18,7 +18,12 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { useMediaQuery } from '@mantine/hooks';
 import { selectUser } from '@/redux/slices/AuthSlice';
-import { accountTiles, collectionTiles, saleReports } from '@/data';
+import {
+  accountTiles,
+  collectionTiles,
+  napReports,
+  saleReports,
+} from '@/data';
 import { callApi } from '@/api';
 import { errorMessage } from '@/api/v2';
 import { toast } from '@/lib/toast';
@@ -89,7 +94,12 @@ const OptionSwitch = ({ label, checked, onChange }) => (
   </Paper>
 );
 
-const allReports = [...accountTiles, ...collectionTiles, ...saleReports];
+const allReports = [
+  ...accountTiles,
+  ...collectionTiles,
+  ...saleReports,
+  ...napReports,
+];
 
 // The NAP reports take exactly the fields Odoo asks for: a region or a
 // territory, with the one not used sent as `false`.
