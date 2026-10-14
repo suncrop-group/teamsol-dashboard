@@ -91,6 +91,15 @@ const OptionSwitch = ({ label, checked, onChange }) => (
 
 const allReports = [...accountTiles, ...collectionTiles, ...saleReports];
 
+// The NAP reports take exactly the fields Odoo asks for: a region or a
+// territory, with the one not used sent as `false`.
+const NAP_REPORTS = [
+  'rsm_nap_achievement_report',
+  'rsm_nap_target_vs_achievement_report',
+  'tm_nap_achievement_report',
+  'tm_nap_target_vs_achievement_report',
+];
+
 const GenerateReport = () => {
   const { state } = useLocation();
   // The browser keeps the navigation state across reloads, so the form is
@@ -151,6 +160,13 @@ const GenerateReport = () => {
       setDynamicFields((prev) => ({
         ...prev,
         is_summary: 'false',
+      }));
+    }
+
+    if (fields?.includes('date_month')) {
+      setDynamicFields((prev) => ({
+        ...prev,
+        date_month: 'month_wise',
       }));
     }
   }, [fields]);
@@ -458,12 +474,59 @@ const GenerateReport = () => {
       setLoading(false);
     };
 
+    const companyId = user?.company?.id ?? user?.company_id;
+
+    if (NAP_REPORTS.includes(code)) {
+      const territoryId = dynamicFields?.territory_id || false;
+      const regionId = region?.id || false;
+
+      if (code.startsWith('tm_') && !territoryId) {
+        toast.error('Territory required', {
+          description: 'Please select a territory to generate this report.',
+        });
+        return;
+      }
+      if (!territoryId && !regionId) {
+        toast.error('No region is assigned to you', {
+          description: 'Please select a territory to generate this report.',
+        });
+        return;
+      }
+
+      const napData = {
+        company_id: companyId,
+        date_from: dynamicFields.date_from,
+        date_to: dynamicFields.date_to,
+        ...(fields.includes('date_month') && {
+          date_month: dynamicFields.date_month,
+        }),
+        ...(code === 'rsm_nap_target_vs_achievement_report'
+          ? { region_id: regionId }
+          : {
+              // A territory report, or the whole region when none is picked.
+              region_id: territoryId || code.startsWith('tm_') ? false : regionId,
+              territory_id: territoryId,
+            }),
+        ...(code === 'rsm_nap_achievement_report' && { report_type: 'pdf' }),
+      };
+
+      setLoading(true);
+      callApi(
+        'POST',
+        '/v2/reports/generate',
+        { code, data: napData },
+        onSuccess,
+        onError,
+      );
+      return;
+    }
+
     // The company is sent with every report; the server still checks it
     // against the signed-in account and sets the Odoo user itself.
     const data = {
       ...dynamicFields,
       with_party: 'with_party',
-      company_id: user?.company?.id ?? user?.company_id,
+      company_id: companyId,
     };
 
     if (fields.includes('is_summary')) {
@@ -768,6 +831,7 @@ const GenerateReport = () => {
           fields.includes('category_ids') ||
           fields.includes('month_ids') ||
           fields.includes('year_id') ||
+          fields.includes('date_month') ||
           fields.includes('is_summary')) && (
           <Paper withBorder shadow="sm" p="lg">
             <SectionTitle>Filters</SectionTitle>
@@ -793,19 +857,42 @@ const GenerateReport = () => {
               {fields.includes('territory_id') && (
                 <Select
                   label="Territory"
-                  withAsterisk
+                  withAsterisk={!optionalFields?.includes('territory_id')}
                   placeholder="Select territory"
                   data={toOptions(territoriesData)}
                   value={toSelectValue(dynamicFields?.territory_id)}
                   onChange={(value) =>
+                    setDynamicFields({
+                      ...dynamicFields,
+                      territory_id:
+                        value === null
+                          ? ''
+                          : originalValue(territoriesData, value),
+                    })
+                  }
+                  // An optional territory can be cleared again.
+                  allowDeselect={!!optionalFields?.includes('territory_id')}
+                  clearable={!!optionalFields?.includes('territory_id')}
+                  searchable
+                />
+              )}
+
+              {fields.includes('date_month') && (
+                <Select
+                  label="Period"
+                  data={[
+                    { value: 'month_wise', label: 'Month wise' },
+                    { value: 'date_wise', label: 'Date wise' },
+                  ]}
+                  value={dynamicFields?.date_month || 'month_wise'}
+                  onChange={(value) =>
                     value !== null &&
                     setDynamicFields({
                       ...dynamicFields,
-                      territory_id: originalValue(territoriesData, value),
+                      date_month: value,
                     })
                   }
                   allowDeselect={false}
-                  searchable
                 />
               )}
 

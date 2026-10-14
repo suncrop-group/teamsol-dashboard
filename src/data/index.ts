@@ -290,6 +290,40 @@ export const accountTiles: AccountTiles = [
     code: 'target_vs_achievement_category_report',
     api_url: 'bm/target_vs_achievement_category/report',
   },
+  {
+    title: 'RSM NAP Achievement Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: ['date_from', 'date_to', 'date_month', 'region_id', 'territory_id'],
+    // Without a territory it covers the whole region.
+    optionalFields: ['territory_id'],
+    code: 'rsm_nap_achievement_report',
+    api_url: 'rsm/nap-achievement/report',
+  },
+  {
+    title: 'RSM NAP Target Vs Achievement Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: ['date_from', 'date_to', 'region_id'],
+    code: 'rsm_nap_target_vs_achievement_report',
+    api_url: 'rsm/nap-target-vs-achievement/report',
+  },
+  {
+    title: 'TM NAP Target Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: ['date_from', 'date_to', 'date_month', 'territory_id'],
+    code: 'tm_nap_achievement_report',
+    api_url: 'tm/nap-achievement/report',
+  },
+  {
+    title: 'TM NAP Target Vs Achievement Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: ['date_from', 'date_to', 'date_month', 'territory_id'],
+    code: 'tm_nap_target_vs_achievement_report',
+    api_url: 'tm/nap-target-vs-achievement/report',
+  },
 ];
 
 export const collectionTiles: AccountTiles = [
