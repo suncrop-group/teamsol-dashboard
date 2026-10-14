@@ -14,8 +14,10 @@ import { Notifications } from '@mantine/notifications';
 import { selectColorScheme } from './redux/slices/ProjectSlice.ts';
 import { buildTheme } from './theme.ts';
 import { registerPwa } from './pwa.tsx';
+import { startClarity } from './lib/clarity.ts';
 
 registerPwa();
+startClarity();
 
 const ThemedApp = () => {
   const colorScheme = useSelector(selectColorScheme);

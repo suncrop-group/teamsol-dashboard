@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { useBranding } from '@/hooks/useBranding';
+import { identifyClarityUser } from '@/lib/clarity';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectIsAuthenticated, selectUser } from './redux/slices/AuthSlice';
@@ -153,6 +155,11 @@ function App() {
   const maintenanceMessage = useSelector(selectMaintenanceMessage);
   const maintenanceUntil = useSelector(selectMaintenanceUntil);
   const user = useSelector(selectUser);
+
+  useEffect(() => {
+    identifyClarityUser(user);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.name, user?.company?.id, user?.company?.name, user?.company_id]);
 
   if (isUnderMaintenance) {
     return (
