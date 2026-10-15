@@ -101,8 +101,8 @@ const allReports = [
   ...napReports,
 ];
 
-// The NAP reports take exactly the fields Odoo asks for: a region or a
-// territory, with the one not used sent as `false`.
+// The NAP reports take exactly the fields Odoo asks for: the user's region,
+// and the territory picked (`false` for the whole region).
 const NAP_REPORTS = [
   'rsm_nap_achievement_report',
   'rsm_nap_target_vs_achievement_report',
@@ -510,13 +510,12 @@ const GenerateReport = () => {
         ...(fields.includes('date_month') && {
           date_month: dynamicFields.date_month,
         }),
-        ...(code === 'rsm_nap_target_vs_achievement_report'
-          ? { region_id: regionId }
-          : {
-              // A territory report, or the whole region when none is picked.
-              region_id: territoryId || code.startsWith('tm_') ? false : regionId,
-              territory_id: territoryId,
-            }),
+        // Odoo takes the region with the territory too; a report with no
+        // territory picked covers the whole region.
+        region_id: regionId,
+        ...(code !== 'rsm_nap_target_vs_achievement_report' && {
+          territory_id: territoryId,
+        }),
         ...(code === 'rsm_nap_achievement_report' && { report_type: 'pdf' }),
       };
 

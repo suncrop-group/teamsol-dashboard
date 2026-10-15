@@ -313,7 +313,7 @@ export const napReports: AccountTiles = [
     api_url: 'rsm/nap-target-vs-achievement/report',
   },
   {
-    title: 'TM NAP Target Report',
+    title: 'TM NAP Achievement Report',
     icon: Reports,
     path: 'GenerateReport',
     fields: ['date_from', 'date_to', 'date_month', 'territory_id'],
