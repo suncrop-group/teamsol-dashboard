@@ -137,6 +137,11 @@ const GenerateReport = () => {
   const navigate = useNavigate();
   const user = useSelector(selectUser);
   const isRegionalManager = user?.is_region_manager;
+  // A regional manager may leave a NAP report's territory out for the whole
+  // region; a territory manager has to pick one.
+  const territoryOptional =
+    !!optionalFields?.includes('territory_id') ||
+    (!!isRegionalManager && NAP_REPORTS.includes(code));
   const [yearMonthData, setYearMonthData] = useState({
     months: [],
     years: [],
@@ -490,7 +495,9 @@ const GenerateReport = () => {
       const territoryId = dynamicFields?.territory_id || false;
       const regionId = region?.id || false;
 
-      if (code.startsWith('tm_') && !territoryId) {
+      // A TM report needs a territory, except from a regional manager, for
+      // whom it covers the whole region.
+      if (code.startsWith('tm_') && !isRegionalManager && !territoryId) {
         toast.error('Territory required', {
           description: 'Please select a territory to generate this report.',
         });
@@ -866,7 +873,7 @@ const GenerateReport = () => {
               {fields.includes('territory_id') && (
                 <Select
                   label="Territory"
-                  withAsterisk={!optionalFields?.includes('territory_id')}
+                  withAsterisk={!territoryOptional}
                   placeholder="Select territory"
                   data={toOptions(territoriesData)}
                   value={toSelectValue(dynamicFields?.territory_id)}
@@ -880,8 +887,8 @@ const GenerateReport = () => {
                     })
                   }
                   // An optional territory can be cleared again.
-                  allowDeselect={!!optionalFields?.includes('territory_id')}
-                  clearable={!!optionalFields?.includes('territory_id')}
+                  allowDeselect={territoryOptional}
+                  clearable={territoryOptional}
                   searchable
                 />
               )}
