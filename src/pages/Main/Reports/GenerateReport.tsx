@@ -142,6 +142,14 @@ const GenerateReport = () => {
   const territoryOptional =
     !!optionalFields?.includes('territory_id') ||
     (!!isRegionalManager && NAP_REPORTS.includes(code));
+  /** Whether a field must be filled; marks it required on the form. */
+  const isRequired = (key: string) => {
+    // A regional manager may leave the territory out and use the region.
+    if (isRegionalManager && (key === 'territory_id' || key === 'territory_ids')) {
+      return false;
+    }
+    return !optionalFields?.includes(key);
+  };
   const [yearMonthData, setYearMonthData] = useState({
     months: [],
     years: [],
@@ -873,7 +881,7 @@ const GenerateReport = () => {
               {fields.includes('territory_id') && (
                 <Select
                   label="Territory"
-                  withAsterisk={!territoryOptional}
+                  withAsterisk={isRequired('territory_id')}
                   placeholder="Select territory"
                   data={toOptions(territoriesData)}
                   value={toSelectValue(dynamicFields?.territory_id)}
@@ -915,7 +923,7 @@ const GenerateReport = () => {
               {fields.includes('territory_ids') && (
                 <MultiSelect
                   label="Territories"
-                  withAsterisk
+                  withAsterisk={isRequired('territory_ids')}
                   placeholder={
                     dynamicFields?.territory_ids?.length > 0
                       ? undefined
@@ -941,7 +949,7 @@ const GenerateReport = () => {
               {fields.includes('policy_ids') && (
                 <MultiSelect
                   label="Policies"
-                  withAsterisk
+                  withAsterisk={isRequired('policy_ids')}
                   placeholder={
                     dynamicFields?.policy_ids?.length > 0
                       ? undefined
@@ -967,7 +975,7 @@ const GenerateReport = () => {
               {fields.includes('partner_id') && (
                 <Select
                   label="Customer"
-                  withAsterisk
+                  withAsterisk={isRequired('partner_id')}
                   placeholder="Select customer"
                   data={toOptions(customers)}
                   value={toSelectValue(dynamicFields?.partner_id)}
@@ -986,6 +994,7 @@ const GenerateReport = () => {
               {fields.includes('policy_id') && (
                 <Select
                   label="Policy"
+                  withAsterisk={isRequired('policy_id')}
                   placeholder="Select policy"
                   data={toOptions(policy)}
                   value={toSelectValue(dynamicFields?.policy_id)}
@@ -1004,6 +1013,7 @@ const GenerateReport = () => {
               {fields.includes('product_id') && (
                 <Select
                   label="Product"
+                  withAsterisk={isRequired('product_id')}
                   placeholder="Select product"
                   data={toOptions(productsData)}
                   value={toSelectValue(dynamicFields?.product_id)}
@@ -1059,7 +1069,7 @@ const GenerateReport = () => {
               {fields.includes('brand_ids') && (
                 <MultiSelect
                   label="Brands"
-                  withAsterisk={!optionalFields?.includes('brand_ids')}
+                  withAsterisk={isRequired('brand_ids')}
                   placeholder={
                     dynamicFields?.brand_ids?.length > 0
                       ? undefined
@@ -1081,7 +1091,7 @@ const GenerateReport = () => {
               {fields.includes('category_ids') && (
                 <MultiSelect
                   label="Categories"
-                  withAsterisk={!optionalFields?.includes('category_ids')}
+                  withAsterisk={isRequired('category_ids')}
                   placeholder={
                     dynamicFields?.category_ids?.length > 0
                       ? undefined
@@ -1103,7 +1113,7 @@ const GenerateReport = () => {
               {fields.includes('month_ids') && (
                 <MultiSelect
                   label="Months"
-                  withAsterisk
+                  withAsterisk={isRequired('month_ids')}
                   placeholder={
                     dynamicFields?.month_ids?.length > 0
                       ? undefined
@@ -1125,7 +1135,7 @@ const GenerateReport = () => {
               {fields.includes('year_id') && (
                 <Select
                   label="Year"
-                  withAsterisk
+                  withAsterisk={isRequired('year_id')}
                   placeholder="Select year"
                   data={toOptions(yearsData)}
                   value={dynamicFields?.year_id?.toString() || null}
