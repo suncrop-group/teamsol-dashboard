@@ -40,6 +40,7 @@ import { toast } from '@/lib/toast';
 import { homeTiles } from '@/data';
 import { Target, Award, Grid3x3 } from 'lucide-react';
 import { EmptyState } from '@/components/app';
+import HomeTodo from './HomeTodo';
 
 const fmt = (v: number) => {
   if (v >= 1_000_000) {
@@ -493,6 +494,8 @@ const Home = () => {
           loading={targetLoading}
           user={user}
         />
+
+        <HomeTodo isRegionManager={!!user?.is_region_manager} />
 
         {/* Modules */}
         <Stack gap="lg">
