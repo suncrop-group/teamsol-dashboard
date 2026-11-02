@@ -37,6 +37,7 @@ import EventDetailsArea from './pages/Main/Events/RegionalManagerEvents/AreaEven
 import EventsForRM from './pages/Main/Events/RegionalManagerEvents/EventsForRM';
 import AddRMEvent from './pages/Main/Events/RegionalManagerEvents/EventsForRM/AddRMEvent';
 import EventDetailsOfRegionalManagerEvent from './pages/Main/Events/RegionalManagerEvents/EventsForRM/EventDetailsOfRegionalManagerEvent';
+import EventsToComplete from './pages/Main/Events/EventsToComplete';
 import NotFound from './pages/NotFound';
 import Notifications from './pages/Main/Notifications';
 import Reports from './pages/Main/Reports';
@@ -391,6 +392,15 @@ function App() {
         }
       />
       {RenderEvents(user)}
+
+      <Route
+        path="/events-to-complete"
+        element={
+          <ProtectedRoute>
+            <EventsToComplete />
+          </ProtectedRoute>
+        }
+      />
 
       <Route path="/auth" element={<SignIn />} />
       <Route

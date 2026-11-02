@@ -224,7 +224,7 @@ export default function HomeTodo({ isRegionManager }: { isRegionManager: boolean
                 ? 'Add what is missing, then mark the event Completed'
                 : 'No event is waiting to be completed'
             }
-            onOpen={() => navigate(isRegionManager ? '/regional-events' : '/events')}
+            onOpen={() => navigate('/events-to-complete')}
           >
             {newEvents.count ? (
               <Group gap={6}>
