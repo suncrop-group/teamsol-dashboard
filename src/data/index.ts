@@ -232,6 +232,14 @@ export const accountTiles: AccountTiles = [
     api_url: 'bm/credit-limit/report',
   },
   {
+    title: 'Employee Expense Sheet Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: ['sheet_id'],
+    code: 'employee_expense_sheet_report',
+    api_url: 'api/expense-report',
+  },
+  {
     title: 'TCL Status Report',
     icon: Reports,
     path: 'GenerateReport',
@@ -327,6 +335,14 @@ export const napReports: AccountTiles = [
     fields: ['date_from', 'date_to', 'region_id', 'territory_id'],
     code: 'tm_nap_target_vs_achievement_report',
     api_url: 'tm/nap-target-vs-achievement/report',
+  },
+  {
+    title: 'TM Qualitative Ach Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: ['date_from', 'date_to', 'region_id', 'territory_id'],
+    code: 'tm_qualitative_ach_report',
+    api_url: 'api/tm-qualitative-ach-report',
   },
 ];
 
@@ -496,6 +512,15 @@ export const saleReports: AccountTiles = [
     optionalFields: ['is_yoy'],
     path: 'GenerateReport',
     code: 'sale_analysis_report',
+  },
+  {
+    title: 'BM PSI Dealer Ach Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    fields: ['date_from', 'date_to', 'region_id', 'territory_id', 'year_id'],
+    optionalFields: ['territory_id'],
+    code: 'bm_dealer_psi_ach_report',
+    api_url: 'bm/dealer-psi-ach/report',
   },
 ];
 

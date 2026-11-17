@@ -110,6 +110,13 @@ const NAP_REPORTS = [
   'tm_nap_target_vs_achievement_report',
 ];
 
+// Achievement reports that take the same region/territory shape as the NAP
+// ones (territory `false` means the whole region), plus an optional year.
+const ACH_REPORTS = ['bm_dealer_psi_ach_report', 'tm_qualitative_ach_report'];
+
+// Reports whose only parameter is the chosen expense sheet.
+const SHEET_REPORTS = ['employee_expense_sheet_report'];
+
 const GenerateReport = () => {
   const { state } = useLocation();
   // The browser keeps the navigation state across reloads, so the form is
@@ -134,6 +141,7 @@ const GenerateReport = () => {
   const [productsData, setProductsData] = useState([]);
   const [brands, setBrands] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [sheets, setSheets] = useState([]);
   const navigate = useNavigate();
   const user = useSelector(selectUser);
   const isRegionalManager = user?.is_region_manager;
@@ -141,7 +149,8 @@ const GenerateReport = () => {
   // region; a territory manager has to pick one.
   const territoryOptional =
     !!optionalFields?.includes('territory_id') ||
-    (!!isRegionalManager && NAP_REPORTS.includes(code));
+    (!!isRegionalManager &&
+      (NAP_REPORTS.includes(code) || ACH_REPORTS.includes(code)));
   /** Whether a field must be filled; marks it required on the form. */
   const isRequired = (key: string) => {
     // A regional manager may leave the territory out and use the region.
@@ -371,6 +380,32 @@ const GenerateReport = () => {
     }
   }, [fields]);
 
+  // Expense sheets the Odoo sync saved; the server returns a ready label as
+  // `name`, for the Employee Expense Sheet Report's picker.
+  useEffect(() => {
+    if (fields?.includes('sheet_id')) {
+      callApi(
+        'GET',
+        '/v2/lookups/expense-sheets',
+        {},
+        (res) => {
+          setSheets(
+            (res?.data || []).map((sheet: { id: number; name: string }) => ({
+              label: sheet.name,
+              value: sheet.id,
+            })),
+          );
+        },
+        () => {
+          setSheets([]);
+          toast.error('Error fetching expense sheets', {
+            description: 'Please try again',
+          });
+        },
+      );
+    }
+  }, [fields]);
+
   // Level one product categories, for the category wise report.
   useEffect(() => {
     if (fields?.includes('category_ids')) {
@@ -499,7 +534,26 @@ const GenerateReport = () => {
 
     const companyId = user?.company?.id ?? user?.company_id;
 
-    if (NAP_REPORTS.includes(code)) {
+    // Employee Expense Sheet Report: just the chosen sheet.
+    if (SHEET_REPORTS.includes(code)) {
+      if (!dynamicFields?.sheet_id) {
+        toast.error('Expense sheet required', {
+          description: 'Please select an expense sheet to generate this report.',
+        });
+        return;
+      }
+      setLoading(true);
+      callApi(
+        'POST',
+        '/v2/reports/generate',
+        { code, data: { company_id: companyId, sheet_id: dynamicFields.sheet_id } },
+        onSuccess,
+        onError,
+      );
+      return;
+    }
+
+    if (NAP_REPORTS.includes(code) || ACH_REPORTS.includes(code)) {
       const territoryId = dynamicFields?.territory_id || false;
       const regionId = region?.id || false;
 
@@ -532,6 +586,7 @@ const GenerateReport = () => {
           territory_id: territoryId,
         }),
         ...(code === 'rsm_nap_achievement_report' && { report_type: 'pdf' }),
+        ...(fields.includes('year_id') && { year_id: dynamicFields.year_id }),
       };
 
       setLoading(true);
@@ -856,7 +911,8 @@ const GenerateReport = () => {
           fields.includes('month_ids') ||
           fields.includes('year_id') ||
           fields.includes('date_month') ||
-          fields.includes('is_summary')) && (
+          fields.includes('is_summary') ||
+          fields.includes('sheet_id')) && (
           <Paper withBorder shadow="sm" p="lg">
             <SectionTitle>Filters</SectionTitle>
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
@@ -1146,6 +1202,25 @@ const GenerateReport = () => {
                       year_id: Number(value),
                     })
                   }
+                  allowDeselect={false}
+                />
+              )}
+
+              {fields.includes('sheet_id') && (
+                <Select
+                  label="Expense Sheet"
+                  withAsterisk={isRequired('sheet_id')}
+                  placeholder="Select expense sheet"
+                  data={sheets}
+                  value={dynamicFields?.sheet_id?.toString() || null}
+                  onChange={(value) =>
+                    value !== null &&
+                    setDynamicFields({
+                      ...dynamicFields,
+                      sheet_id: Number(value),
+                    })
+                  }
+                  searchable
                   allowDeselect={false}
                 />
               )}
