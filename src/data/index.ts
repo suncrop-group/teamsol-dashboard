@@ -321,6 +321,16 @@ export const napReports: AccountTiles = [
     api_url: 'rsm/nap-target-vs-achievement/report',
   },
   {
+    title: 'RSM Qualitative Ach Report',
+    icon: Reports,
+    path: 'GenerateReport',
+    // Region comes from the signed-in RSM; division and national are always
+    // false (sent from the payload builder, not picked on the form).
+    fields: ['date_from', 'date_to', 'region_id'],
+    code: 'rsm_qualitative_ach_report',
+    api_url: 'api/rsm-qualitative-ach-report',
+  },
+  {
     title: 'TM NAP Achievement Report',
     icon: Reports,
     path: 'GenerateReport',

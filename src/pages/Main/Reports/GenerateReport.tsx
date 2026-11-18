@@ -112,7 +112,11 @@ const NAP_REPORTS = [
 
 // Achievement reports that take the same region/territory shape as the NAP
 // ones (territory `false` means the whole region), plus an optional year.
-const ACH_REPORTS = ['bm_dealer_psi_ach_report', 'tm_qualitative_ach_report'];
+const ACH_REPORTS = [
+  'bm_dealer_psi_ach_report',
+  'tm_qualitative_ach_report',
+  'rsm_qualitative_ach_report',
+];
 
 // Reports whose only parameter is the chosen expense sheet.
 const SHEET_REPORTS = ['employee_expense_sheet_report'];
@@ -582,8 +586,15 @@ const GenerateReport = () => {
         // Odoo takes the region with the territory too; a report with no
         // territory picked covers the whole region.
         region_id: regionId,
-        ...(code !== 'rsm_nap_target_vs_achievement_report' && {
-          territory_id: territoryId,
+        ...(code !== 'rsm_nap_target_vs_achievement_report' &&
+          code !== 'rsm_qualitative_ach_report' && {
+            territory_id: territoryId,
+          }),
+        // The RSM qualitative report is region-wide; division and national
+        // are always false per the Odoo spec.
+        ...(code === 'rsm_qualitative_ach_report' && {
+          division_id: false,
+          is_national: false,
         }),
         ...(code === 'rsm_nap_achievement_report' && { report_type: 'pdf' }),
         ...(fields.includes('year_id') && { year_id: dynamicFields.year_id }),
