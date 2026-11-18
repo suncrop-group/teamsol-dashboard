@@ -1211,7 +1211,7 @@ const GenerateReport = () => {
                   label="Expense Sheet"
                   withAsterisk={isRequired('sheet_id')}
                   placeholder="Select expense sheet"
-                  data={sheets}
+                  data={toOptions(sheets)}
                   value={dynamicFields?.sheet_id?.toString() || null}
                   onChange={(value) =>
                     value !== null &&
